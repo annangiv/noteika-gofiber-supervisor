@@ -128,6 +128,17 @@
                                 <textarea id="capture-body" rows="4" placeholder="Paste AI prompt, link, notes, Q&A, or code snippets here..." required></textarea>
                             </div>
                             
+                            <!-- Proactive Resurfacing Warning -->
+                            <div id="resurface-alert" class="resurface-alert hidden">
+                                <div class="resurface-alert-header">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <span>Similar captures already exist:</span>
+                                </div>
+                                <div id="resurface-list" class="resurface-list">
+                                    <!-- Dynamic matching items load here -->
+                                </div>
+                            </div>
+                            
                             <div class="capture-form-footer">
                                 <div class="inline-inputs">
                                     <div class="inline-input-group">
@@ -219,6 +230,7 @@
         // Global State
         let currentUser = null;
         let projects = ["Inbox"];
+        let resurfaceTimeout = null;
         let selectedProject = "Inbox";
         let isSearching = false;
         let searchTimeout = null;
@@ -237,6 +249,8 @@
             captureSource: document.getElementById('capture-source'),
             btnSave: document.getElementById('btn-save'),
             projectSuggestions: document.getElementById('project-suggestions'),
+            resurfaceAlert: document.getElementById('resurface-alert'),
+            resurfaceList: document.getElementById('resurface-list'),
             
             searchInput: document.getElementById('search-input'),
             btnClearSearch: document.getElementById('btn-clear-search'),
@@ -543,6 +557,8 @@
                     
                     el.captureBody.value = '';
                     el.captureSource.value = '';
+                    el.resurfaceAlert.classList.add('hidden');
+                    el.resurfaceList.innerHTML = '';
                     
                     // Reload projects list and captures
                     await loadProjects();
@@ -639,6 +655,60 @@
             searchTimeout = setTimeout(() => {
                 runSemanticSearch(query);
             }, 500); // 500ms debounce
+        });
+
+        // Debounce input in capture area to proactively resurface duplicates
+        el.captureBody.addEventListener('input', (e) => {
+            const text = e.target.value.trim();
+            
+            clearTimeout(resurfaceTimeout);
+            
+            if (text.length < 15) {
+                el.resurfaceAlert.classList.add('hidden');
+                el.resurfaceList.innerHTML = '';
+                return;
+            }
+
+            resurfaceTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch('/api/captures/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: text })
+                    });
+
+                    if (res.status === 200) {
+                        const results = await res.json();
+                        const highMatches = results.filter(item => item.similarity > 0.40);
+
+                        if (highMatches.length > 0) {
+                            el.resurfaceList.innerHTML = '';
+                            
+                            highMatches.slice(0, 3).forEach(item => {
+                                const cap = item.capture;
+                                const score = Math.round(item.similarity * 100);
+                                
+                                const div = document.createElement('div');
+                                div.className = 'resurface-item';
+                                div.onclick = () => openEditModal(cap);
+                                
+                                div.innerHTML = `
+                                    <span class="resurface-item-title">${escapeHtml(cap.title)}</span>
+                                    <span class="resurface-item-score"><i class="fa-solid fa-brain"></i> Match: ${score}%</span>
+                                `;
+                                el.resurfaceList.appendChild(div);
+                            });
+
+                            el.resurfaceAlert.classList.remove('hidden');
+                        } else {
+                            el.resurfaceAlert.classList.add('hidden');
+                            el.resurfaceList.innerHTML = '';
+                        }
+                    }
+                } catch (err) {
+                    console.error("Proactive resurfacing failed", err);
+                }
+            }, 600); // 600ms debounce
         });
 
         // Clear Search
