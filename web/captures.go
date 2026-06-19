@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -192,7 +193,7 @@ func tagsEqual(a, b []string) bool {
 	return strings.Join(utils.NormalizeTags(a), ",") == strings.Join(utils.NormalizeTags(b), ",")
 }
 
-// Create a new capture (generating embedding vector on backend)
+// Create a new capture (client-encrypted or legacy plaintext).
 func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
@@ -200,24 +201,18 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string   `json:"title"`
-		Body      string   `json:"body"`
-		Project   string   `json:"project"`
-		SourceURL string   `json:"source_url"`
-		Tags      []string `json:"tags"`
+		Ciphertext string    `json:"ciphertext"`
+		Embedding  []float32 `json:"embedding"`
+		Title      string    `json:"title"`
+		Body       string    `json:"body"`
+		Project    string    `json:"project"`
+		SourceURL  string    `json:"source_url"`
+		Tags       []string  `json:"tags"`
+		Type       string    `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
-	}
-
-	if strings.TrimSpace(input.Body) == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Capture content body is required"})
-	}
-
-	title := strings.TrimSpace(input.Title)
-	if title == "" {
-		title = generateAutoTitle(input.Body)
 	}
 
 	project := strings.TrimSpace(input.Project)
@@ -225,9 +220,48 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		project = "Inbox"
 	}
 
-	tags := resolveCaptureTags(title, input.Body, utils.NormalizeTags(input.Tags))
+	now := time.Now().Unix()
 
-	// Generate embedding vector on the backend (best-effort — save still succeeds without it)
+	if strings.TrimSpace(input.Ciphertext) != "" {
+		ct, err := base64.StdEncoding.DecodeString(input.Ciphertext)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid ciphertext encoding"})
+		}
+		cType := strings.TrimSpace(input.Type)
+		if cType == "" {
+			cType = "note"
+		}
+		capture := db.Capture{
+			ID:         uuid.New().String(),
+			UserID:     userID,
+			Project:    project,
+			Ciphertext: ct,
+			Type:       cType,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := prepareCaptureForStorage(&capture, input.Embedding); err != nil {
+			log.Printf("[CapturesHandler] Failed to encrypt embedding: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to store embedding"})
+		}
+		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
+			log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to save capture"})
+		}
+		return c.Status(201).JSON(toCaptureAPI(capture))
+	}
+
+	// Legacy plaintext path (pre-E2E clients / migration).
+	if strings.TrimSpace(input.Body) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Capture content body or ciphertext is required"})
+	}
+
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = generateAutoTitle(input.Body)
+	}
+
+	tags := resolveCaptureTags(title, input.Body, utils.NormalizeTags(input.Tags))
 	embeddingText := buildEmbeddingText(title, input.Body, tags)
 	vector, err := getEmbedding(embeddingText)
 	if err != nil {
@@ -236,30 +270,26 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	cType := classifyContentType(input.Body)
-
-	now := time.Now().Unix()
 	capture := db.Capture{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		Project:   project,
-		Title:     title,
-		Body:      input.Body,
-		SourceURL: input.SourceURL,
-		Type:      cType,
-		Tags:      tags,
-		Embedding: vector,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:              uuid.New().String(),
+		UserID:          userID,
+		Project:         project,
+		Title:           title,
+		Body:            input.Body,
+		SourceURL:       input.SourceURL,
+		Type:            cType,
+		Tags:            tags,
+		LegacyEmbedding: vector,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
-	payload := actor.SaveCapturePayload{Capture: capture}
-	_, err = h.gateway.Send(actor.TypeSaveCapture, payload, 5*time.Second)
-	if err != nil {
+	if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
 		log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to save capture"})
 	}
 
-	return c.Status(201).JSON(capture)
+	return c.Status(201).JSON(toCaptureAPI(capture))
 }
 
 // List captures (optional project filter)
@@ -291,7 +321,7 @@ func (h *CapturesHandler) List(c *fiber.Ctx) error {
 		return captures[i].CreatedAt > captures[j].CreatedAt
 	})
 
-	return c.JSON(captures)
+	return c.JSON(toCaptureAPIList(captures))
 }
 
 // Get single capture detail
@@ -317,7 +347,7 @@ func (h *CapturesHandler) Get(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Capture not found"})
 	}
 
-	return c.JSON(capture)
+	return c.JSON(toCaptureAPI(capture))
 }
 
 // Update an existing capture
@@ -340,15 +370,46 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string    `json:"title"`
-		Body      string    `json:"body"`
-		Project   string    `json:"project"`
-		SourceURL string    `json:"source_url"`
-		Tags      *[]string `json:"tags"`
+		Ciphertext string    `json:"ciphertext"`
+		Embedding  []float32 `json:"embedding"`
+		Title      string    `json:"title"`
+		Body       string    `json:"body"`
+		Project    string    `json:"project"`
+		SourceURL  string    `json:"source_url"`
+		Tags       *[]string `json:"tags"`
+		Type       string    `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	if strings.TrimSpace(input.Ciphertext) != "" {
+		ct, err := base64.StdEncoding.DecodeString(input.Ciphertext)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid ciphertext encoding"})
+		}
+		existing.Ciphertext = ct
+		existing.Title = ""
+		existing.Body = ""
+		existing.SourceURL = ""
+		existing.Tags = nil
+		if input.Type != "" {
+			existing.Type = strings.TrimSpace(input.Type)
+		}
+		if input.Project != "" {
+			existing.Project = strings.TrimSpace(input.Project)
+		}
+		if len(input.Embedding) > 0 {
+			if err := prepareCaptureForStorage(&existing, input.Embedding); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to store embedding"})
+			}
+		}
+		existing.UpdatedAt = time.Now().Unix()
+		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: existing}, 5*time.Second); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to update capture"})
+		}
+		return c.JSON(toCaptureAPI(existing))
 	}
 
 	textChanged := false
@@ -390,7 +451,7 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		if err != nil {
 			log.Printf("[CapturesHandler] Embedding unavailable on update, keeping prior vector: %v", err)
 		} else {
-			existing.Embedding = vector
+			existing.LegacyEmbedding = vector
 		}
 	}
 
@@ -402,7 +463,7 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to update capture"})
 	}
 
-	return c.JSON(existing)
+	return c.JSON(toCaptureAPI(existing))
 }
 
 // Delete a capture (Soft Delete if active, Hard Delete if already deleted)
@@ -474,7 +535,7 @@ func (h *CapturesHandler) Restore(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to restore capture"})
 	}
 
-	return c.JSON(capture)
+	return c.JSON(toCaptureAPI(capture))
 }
 
 // EmptyTrash deletes all soft-deleted captures permanently
@@ -556,6 +617,9 @@ func (h *CapturesHandler) ListTags(c *fiber.Ctx) error {
 
 	seen := make(map[string]struct{})
 	for _, cap := range captures {
+		if cap.IsEncrypted() {
+			continue
+		}
 		for _, tag := range cap.Tags {
 			n := utils.NormalizeTag(tag)
 			if n != "" {
@@ -573,16 +637,17 @@ func (h *CapturesHandler) ListTags(c *fiber.Ctx) error {
 }
 
 type SearchResult struct {
-	Capture    db.Capture `json:"capture"`
+	Capture    captureAPI `json:"capture"`
 	Similarity float32    `json:"similarity"`
 }
 
 type searchRequest struct {
-	Query         string   `json:"query"`
-	Project       string   `json:"project"`
-	MinSimilarity *float32 `json:"min_similarity"`
-	Limit         int      `json:"limit"`
-	ExcludeID     string   `json:"exclude_id"`
+	Query           string    `json:"query"`
+	QueryEmbedding  []float32 `json:"query_embedding"`
+	Project         string    `json:"project"`
+	MinSimilarity   *float32  `json:"min_similarity"`
+	Limit           int       `json:"limit"`
+	ExcludeID       string    `json:"exclude_id"`
 }
 
 func rankCapturesBySimilarity(query string, queryVector []float32, captures []db.Capture, opts searchRequest) []SearchResult {
@@ -604,13 +669,22 @@ func rankCapturesBySimilarity(query string, queryVector []float32, captures []db
 			continue
 		}
 
-		similarity := utils.CombinedSimilarity(query, cap.Title, cap.Body, cap.Tags, queryVector, cap.Embedding)
+		capVector := captureSearchVector(cap)
+		var similarity float32
+		if cap.IsEncrypted() {
+			if len(queryVector) == 0 || len(capVector) == 0 {
+				continue
+			}
+			similarity = utils.CosineSimilarity(queryVector, capVector)
+		} else {
+			similarity = utils.CombinedSimilarity(query, cap.Title, cap.Body, cap.Tags, queryVector, cap.LegacyEmbedding)
+		}
 		if similarity < minSim {
 			continue
 		}
 
 		results = append(results, SearchResult{
-			Capture:    cap,
+			Capture:    toCaptureAPI(cap),
 			Similarity: similarity,
 		})
 	}
@@ -641,15 +715,18 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	}
 
 	query := strings.TrimSpace(input.Query)
-	if query == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Query text is required"})
-	}
+	queryVector := input.QueryEmbedding
 
-	// Best-effort embedding — text similarity still works without it
-	queryVector, err := getEmbedding(query)
-	if err != nil {
-		log.Printf("[CapturesHandler] Embedding unavailable for search, using text similarity: %v", err)
-		queryVector = nil
+	if len(queryVector) == 0 {
+		if query == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "query_embedding or query text is required"})
+		}
+		var err error
+		queryVector, err = getEmbedding(query)
+		if err != nil {
+			log.Printf("[CapturesHandler] Embedding unavailable for search, using text similarity: %v", err)
+			queryVector = nil
+		}
 	}
 
 	projectFilter := strings.TrimSpace(input.Project)

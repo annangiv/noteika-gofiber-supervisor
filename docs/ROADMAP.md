@@ -10,7 +10,7 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 
 **Baseline commit:** `docs: E2E architecture (pre-E2E plaintext baseline)` — last snapshot before implementation.
 
-- [ ] Phase E2E-1: crypto envelope, client embed, encrypted storage, search by query vector
+- [x] Phase E2E-1: crypto envelope, client embed, encrypted storage, search by query vector
 - [ ] Phase E2E-2: hardening, migration, encrypt tags/projects
 - [ ] Phase E2E-3: Flutter + SQLite
 - [ ] Phase E2E-4: optional title model, recovery key

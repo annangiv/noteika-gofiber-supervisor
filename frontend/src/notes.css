@@ -507,6 +507,39 @@ pre code { font-family: ui-monospace, monospace; }
 }
 
 .fade-in { animation: fadeIn .2s ease; }
+
+.vault-gate {
+  min-height: calc(100vh - 64px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-muted);
+}
+.vault-card {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px;
+}
+.vault-card h1 {
+  font-size: 20px;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vault-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.vault-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 960px) {

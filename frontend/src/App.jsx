@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { VaultProvider } from './context/VaultContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import PricingPage from './pages/PricingPage';
@@ -9,7 +10,8 @@ import AccountPage from './pages/AccountPage';
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <VaultProvider>
+      <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/pricing" element={<PricingPage />} />
@@ -34,6 +36,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </VaultProvider>
   );
 }

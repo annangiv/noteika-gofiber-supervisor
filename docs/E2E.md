@@ -1,6 +1,6 @@
 # Noteika — Client encryption & semantic search
 
-> **Status:** Planned. This document describes the target architecture.  
+> **Status:** Phase E2E-1 in progress (client encrypt + client embed + server encrypted vectors).  
 > **Baseline:** The commit immediately before the first E2E implementation PR is the last **plaintext-on-server** snapshot. Look for commit message: `docs: E2E architecture (pre-E2E plaintext baseline)`.
 
 This is **not** Obsidian-style true E2E (server never sees semantic data). It is **client-encrypted content + server-side semantic index** — chosen so Noteika can keep its differentiator: *resurface before you duplicate yourself*.
@@ -112,14 +112,14 @@ Client                          Server
 
 ### Phase E2E-1 — Crypto envelope (MVP)
 
-- [ ] Client: passcode setup/unlock, key derivation, encrypt/decrypt helpers.
-- [ ] Client: load embedding model (transformers.js); embed on save and search.
-- [ ] API: accept `ciphertext` + `embedding` on create/update; stop persisting plaintext body/title.
-- [ ] API: search accepts `query_embedding` instead of (or in addition to) query text.
-- [ ] Server: encrypt embeddings at rest before Badger write.
-- [ ] Server: remove plaintext from `db.Capture` (or split `CaptureEncrypted` + `CaptureIndex`).
-- [ ] Frontend: unlock gate; decrypt list/detail for display.
-- [ ] Migration: existing users — plaintext → encrypt on first unlock (or fresh start for beta).
+- [x] Client: passcode setup/unlock, key derivation, encrypt/decrypt helpers.
+- [x] Client: load embedding model (transformers.js); embed on save and search.
+- [x] API: accept `ciphertext` + `embedding` on create/update; stop persisting plaintext body/title (new captures).
+- [x] API: search accepts `query_embedding` instead of (or in addition to) query text.
+- [x] Server: encrypt embeddings at rest before Badger write.
+- [x] Server: `Ciphertext` field on `db.Capture` (legacy plaintext fields kept for migration).
+- [x] Frontend: unlock gate; decrypt list/detail for display.
+- [ ] Migration: re-encrypt existing plaintext captures on first unlock.
 
 ### Phase E2E-2 — Hardening
 

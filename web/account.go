@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -22,15 +23,16 @@ func NewAccountHandler(gateway *actor.ActorGateway) *AccountHandler {
 }
 
 type exportCapture struct {
-	ID        string   `json:"id"`
-	Project   string   `json:"project"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	SourceURL string   `json:"source_url"`
-	Type      string   `json:"type"`
-	Tags      []string `json:"tags,omitempty"`
-	CreatedAt int64    `json:"created_at"`
-	UpdatedAt int64    `json:"updated_at"`
+	ID         string   `json:"id"`
+	Project    string   `json:"project"`
+	Ciphertext string   `json:"ciphertext,omitempty"`
+	Title      string   `json:"title,omitempty"`
+	Body       string   `json:"body,omitempty"`
+	SourceURL  string   `json:"source_url,omitempty"`
+	Type       string   `json:"type"`
+	Tags       []string `json:"tags,omitempty"`
+	CreatedAt  int64    `json:"created_at"`
+	UpdatedAt  int64    `json:"updated_at"`
 }
 
 type exportPayload struct {
@@ -82,17 +84,22 @@ func (h *AccountHandler) Export(c *fiber.Ctx) error {
 
 	exported := make([]exportCapture, 0, len(captures))
 	for _, cap := range captures {
-		exported = append(exported, exportCapture{
+		exp := exportCapture{
 			ID:        cap.ID,
 			Project:   cap.Project,
-			Title:     cap.Title,
-			Body:      cap.Body,
-			SourceURL: cap.SourceURL,
 			Type:      cap.Type,
-			Tags:      cap.Tags,
 			CreatedAt: cap.CreatedAt,
 			UpdatedAt: cap.UpdatedAt,
-		})
+		}
+		if cap.IsEncrypted() {
+			exp.Ciphertext = base64.StdEncoding.EncodeToString(cap.Ciphertext)
+		} else {
+			exp.Title = cap.Title
+			exp.Body = cap.Body
+			exp.SourceURL = cap.SourceURL
+			exp.Tags = cap.Tags
+		}
+		exported = append(exported, exp)
 	}
 
 	payload := exportPayload{

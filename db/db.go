@@ -26,6 +26,7 @@ type User struct {
 	FullName            string  `json:"full_name"`
 	Tier                string  `json:"tier"`
 	SearchMinSimilarity float32 `json:"search_min_similarity,omitempty"`
+	EncryptionSalt      []byte  `json:"encryption_salt,omitempty"`
 	CreatedAt           int64   `json:"created_at"`
 	UpdatedAt      int64  `json:"updated_at"`
 }
@@ -38,18 +39,25 @@ type Session struct {
 }
 
 type Capture struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Project   string    `json:"project"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	SourceURL string    `json:"source_url"`
-	Type      string    `json:"type"` // "note", "link", "qa", "code"
-	Tags      []string  `json:"tags,omitempty"`
-	Embedding []float32 `json:"embedding,omitempty"`
+	ID        string `json:"id"`
+	UserID    string `json:"user_id"`
+	Project   string `json:"project"`
+	Ciphertext []byte `json:"ciphertext,omitempty"`
+	// Legacy plaintext fields (pre-E2E captures only).
+	Title     string `json:"title,omitempty"`
+	Body      string `json:"body,omitempty"`
+	SourceURL string `json:"source_url,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Type      string `json:"type"` // "note", "link", "qa", "code"
+	EncryptedEmbedding []byte    `json:"-"`
+	LegacyEmbedding    []float32 `json:"embedding,omitempty"`
 	CreatedAt int64     `json:"created_at"`
 	UpdatedAt int64     `json:"updated_at"`
 	DeletedAt int64     `json:"deleted_at"`
+}
+
+func (c Capture) IsEncrypted() bool {
+	return len(c.Ciphertext) > 0
 }
 
 type BadgerRepo struct {

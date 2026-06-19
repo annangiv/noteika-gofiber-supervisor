@@ -1,22 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { SIMILARITY, LAST_SEARCH_KEY, searchCaptures, formatRelativeTime, DEFAULT_SEARCH_MIN } from '../lib/notesApi';
+import {
+  SIMILARITY, LAST_SEARCH_KEY, searchCaptures, decryptSearchResults,
+  decryptCaptureList, formatRelativeTime, DEFAULT_SEARCH_MIN,
+} from '../lib/notesApi';
+import { useVault } from '../context/VaultContext';
+import VaultGate from '../components/VaultGate';
+import { encryptCapturePayload } from '../lib/crypto';
+import { embedText, buildEmbeddingText } from '../lib/embeddings';
+import {
+  generateAutoTitle, classifyContentType, parseTagsInput, formatTagsInput,
+  mergeTags, parseHashtags,
+} from '../lib/captureContent';
 import '../notes.css';
 
-function parseTagsInput(value) {
-  if (!value || !value.trim()) return [];
-  return value
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-function formatTagsInput(tags) {
-  if (!Array.isArray(tags) || tags.length === 0) return '';
-  return tags.join(', ');
-}
-
 export default function NotesPage() {
+  const { vaultKey } = useVault();
   // Authentication states
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -114,6 +113,7 @@ export default function NotesPage() {
   };
 
   const loadCaptures = async () => {
+    if (!vaultKey) return;
     try {
       let url = '/api/captures';
       if (selectedProject) {
@@ -122,36 +122,27 @@ export default function NotesPage() {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        setCaptures(Array.isArray(data) ? data : []);
+        const decrypted = await decryptCaptureList(vaultKey, Array.isArray(data) ? data : []);
+        setCaptures(decrypted);
+        setKnownTags(
+          [...new Set(decrypted.flatMap((c) => (c.tags ?? []).map((t) => t.toLowerCase())))].sort(),
+        );
       }
     } catch (err) {
       showToast('Failed to load captures', 'error');
     }
   };
 
-  const loadTags = async () => {
-    try {
-      const res = await fetch('/api/tags');
-      if (res.ok) {
-        const data = await res.json();
-        setKnownTags(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.error('Failed to load tags:', err);
-    }
-  };
-
   useEffect(() => {
-    if (user) {
+    if (user && vaultKey) {
       loadProjects();
       loadCaptures();
-      loadTags();
       setSearchQuery('');
       setIsSearching(false);
       setSearchResults([]);
       setStickyBannerCapture(null);
     }
-  }, [user, selectedProject]);
+  }, [user, selectedProject, vaultKey]);
 
   // 3. Telemetry Log Polling
   useEffect(() => {
@@ -189,7 +180,7 @@ export default function NotesPage() {
   // 4. Proactive duplicate warning while typing (whole docket, not project-scoped)
   useEffect(() => {
     const trimmed = formBody.trim();
-    if (trimmed.length < 8) {
+    if (!vaultKey || trimmed.length < 8) {
       setDuplicateWarning([]);
       return;
     }
@@ -202,18 +193,19 @@ export default function NotesPage() {
           minSimilarity: SIMILARITY.DUPLICATE_WARN,
           limit: 5,
         });
-        setDuplicateWarning(matches);
+        const decrypted = await decryptSearchResults(vaultKey, matches);
+        setDuplicateWarning(decrypted);
       } catch (err) {
         console.error('Proactive search failed:', err);
       }
     }, 500);
 
     return () => clearTimeout(duplicateDebounceTimer.current);
-  }, [formBody]);
+  }, [formBody, vaultKey]);
 
   // 4b. Resurface related captures when opening a project
   useEffect(() => {
-    if (!user || isSearching || selectedProject === 'Trash') {
+    if (!user || !vaultKey || isSearching || selectedProject === 'Trash') {
       setProjectRelated([]);
       setLastSearchRelated([]);
       return;
@@ -234,7 +226,7 @@ export default function NotesPage() {
           limit: 3,
           excludeId: recent.id,
         });
-        if (!cancelled) setProjectRelated(related);
+        if (!cancelled) setProjectRelated(await decryptSearchResults(vaultKey, related));
       } else if (!cancelled) {
         setProjectRelated([]);
       }
@@ -247,7 +239,7 @@ export default function NotesPage() {
           minSimilarity: SIMILARITY.RESURFACE,
           limit: 3,
         });
-        if (!cancelled) setLastSearchRelated(related);
+        if (!cancelled) setLastSearchRelated(await decryptSearchResults(vaultKey, related));
       } else if (!cancelled) {
         setLastSearchRelated([]);
       }
@@ -255,14 +247,14 @@ export default function NotesPage() {
 
     loadResurface();
     return () => { cancelled = true; };
-  }, [user, selectedProject, captures, isSearching]);
+  }, [user, selectedProject, captures, isSearching, vaultKey]);
 
   // 5. Semantic Search (debounced, whole docket)
   const searchMinSimilarity = user?.search_min_similarity ?? DEFAULT_SEARCH_MIN;
 
   const runSemanticSearch = useCallback(async (query) => {
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (!trimmed || !vaultKey) {
       setIsSearching(false);
       setSearchResults([]);
       setStickyBannerCapture(null);
@@ -270,26 +262,27 @@ export default function NotesPage() {
     }
 
     setIsSearching(true);
-    addLog(`[API] Dispatching semantic query: "${trimmed}"`, 'info');
+    addLog('[API] Dispatching semantic query (encrypted vector)...', 'info');
 
     try {
       const matches = await searchCaptures(trimmed, {
         minSimilarity: searchMinSimilarity,
         limit: 20,
       });
-      setSearchResults(matches);
+      const decrypted = await decryptSearchResults(vaultKey, matches);
+      setSearchResults(decrypted);
       sessionStorage.setItem(LAST_SEARCH_KEY, trimmed);
 
-      if (matches.length > 0 && matches[0].similarity > SIMILARITY.BANNER) {
-        setStickyBannerCapture(matches[0]);
+      if (decrypted.length > 0 && decrypted[0].similarity > SIMILARITY.BANNER) {
+        setStickyBannerCapture(decrypted[0]);
       } else {
         setStickyBannerCapture(null);
       }
-      addLog(`[API] Found ${matches.length} semantic matches. Top match score: ${matches[0] ? Math.round(matches[0].similarity * 100) : 0}%`, 'info');
+      addLog(`[API] Found ${decrypted.length} semantic matches. Top match score: ${decrypted[0] ? Math.round(decrypted[0].similarity * 100) : 0}%`, 'info');
     } catch (err) {
-      showToast('Connection to embedding search failed', 'error');
+      showToast('Semantic search failed — is the model loaded?', 'error');
     }
-  }, [searchMinSimilarity]);
+  }, [searchMinSimilarity, vaultKey]);
 
   const scheduleSemanticSearch = (query) => {
     if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
@@ -302,25 +295,38 @@ export default function NotesPage() {
 
   // Check entire docket for duplicates before saving
   const findSimilarInDocket = async (body) => {
-    return searchCaptures(body.trim(), {
+    const matches = await searchCaptures(body.trim(), {
       minSimilarity: SIMILARITY.DUPLICATE_WARN,
       limit: 5,
     });
+    return decryptSearchResults(vaultKey, matches);
   };
 
   const performSave = async () => {
+    if (!vaultKey) return;
     setIsSaving(true);
-    addLog(`[API] Saving new capture to project "${formProject || selectedProject || 'Inbox'}"...`, 'info');
+    addLog(`[API] Saving encrypted capture to project "${formProject || selectedProject || 'Inbox'}"...`, 'info');
 
     try {
+      const title = generateAutoTitle(formBody);
+      const tags = mergeTags(parseTagsInput(formTags), parseHashtags(formBody));
+      const cType = classifyContentType(formBody);
+      const embedding = await embedText(buildEmbeddingText(title, formBody, tags));
+      const ciphertext = await encryptCapturePayload(vaultKey, {
+        title,
+        body: formBody,
+        source_url: formSourceUrl,
+        tags,
+      });
+
       const res = await fetch('/api/captures', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          body: formBody,
-          tags: parseTagsInput(formTags),
+          ciphertext,
+          embedding,
           project: formProject || selectedProject || 'Inbox',
-          source_url: formSourceUrl,
+          type: cType,
         }),
       });
 
@@ -334,12 +340,11 @@ export default function NotesPage() {
         setSaveDuplicateConfirm(null);
         loadCaptures();
         loadProjects();
-        loadTags();
       } else {
         showToast('Failed to save capture', 'error');
       }
     } catch (err) {
-      showToast('Server connection failed', 'error');
+      showToast('Save failed — check vault and model', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -366,20 +371,30 @@ export default function NotesPage() {
   // 7. Update existing capture
   const handleUpdateCapture = async (e) => {
     e.preventDefault();
-    if (!editingCapture || !editingCapture.body.trim()) return;
+    if (!editingCapture || !editingCapture.body.trim() || !vaultKey) return;
 
     addLog(`[API] Updating capture "${editingCapture.id}"...`, 'info');
 
     try {
+      const title = editingCapture.title || generateAutoTitle(editingCapture.body);
+      const tags = editingCapture.tags ?? [];
+      const cType = classifyContentType(editingCapture.body);
+      const embedding = await embedText(buildEmbeddingText(title, editingCapture.body, tags));
+      const ciphertext = await encryptCapturePayload(vaultKey, {
+        title,
+        body: editingCapture.body,
+        source_url: editingCapture.source_url ?? '',
+        tags,
+      });
+
       const res = await fetch(`/api/captures/${editingCapture.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: editingCapture.title,
-          body: editingCapture.body,
+          ciphertext,
+          embedding,
           project: editingCapture.project,
-          source_url: editingCapture.source_url,
-          tags: editingCapture.tags || [],
+          type: cType,
         }),
       });
 
@@ -388,12 +403,11 @@ export default function NotesPage() {
         setEditingCapture(null);
         loadCaptures();
         loadProjects();
-        loadTags();
       } else {
         showToast('Failed to update capture', 'error');
       }
     } catch (err) {
-      showToast('Server communication failed', 'error');
+      showToast('Update failed', 'error');
     }
   };
 
@@ -490,6 +504,7 @@ export default function NotesPage() {
   const displayedItems = isSearching ? searchResults : captures;
 
   return (
+    <VaultGate>
     <div className="notes-app">
 
       {/* TOAST CONTAINER */}
@@ -513,7 +528,7 @@ export default function NotesPage() {
             Notes
           </button>
           <span className="badge badge-ready">
-            Semantic search ready
+            Encrypted · semantic search
           </span>
           <div className="notes-header-right">
             <div className="user-info">
@@ -1285,5 +1300,6 @@ export default function NotesPage() {
         </div>
       )}
     </div>
+    </VaultGate>
   );
 }

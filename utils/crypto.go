@@ -88,3 +88,12 @@ func GenerateRandomHex(size int) string {
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
 }
+
+// RandomBytes returns cryptographically random bytes.
+func RandomBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}

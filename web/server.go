@@ -52,6 +52,7 @@ func (s *Server) Start(port string) error {
 	// Setup handlers
 	authHandler := NewAuthHandler(s.gateway)
 	capturesHandler := NewCapturesHandler(s.gateway)
+	vaultHandler := NewVaultHandler(s.gateway)
 	accountHandler := NewAccountHandler(s.gateway)
 	debugHandler := NewDebugHandler(s.supervisor, s.registry, s.gateway)
 
@@ -219,6 +220,7 @@ func (s *Server) Start(port string) error {
 	api.Post("/captures/restore/:id", capturesHandler.Restore)
 	api.Get("/projects", capturesHandler.ListProjects)
 	api.Get("/tags", capturesHandler.ListTags)
+	api.Get("/vault/salt", vaultHandler.GetSalt)
 	api.Post("/captures/search", capturesHandler.Search)
 
 	// Account

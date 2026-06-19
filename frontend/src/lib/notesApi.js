@@ -1,3 +1,6 @@
+import { embedText } from './embeddings';
+import { decryptCaptureList, decryptCaptureRecord } from './crypto';
+
 export const DEFAULT_SEARCH_MIN = 0.70;
 export const SEARCH_MIN_FLOOR = 0.50;
 export const SEARCH_MIN_CEILING = 0.85;
@@ -12,12 +15,28 @@ export const SIMILARITY = {
 
 export const LAST_SEARCH_KEY = 'noteika_last_search';
 
-export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '' } = {}) {
+export async function decryptSearchResults(vaultKey, results) {
+  if (!vaultKey || !Array.isArray(results)) return results ?? [];
+  return Promise.all(
+    results.map(async (item) => ({
+      ...item,
+      capture: await decryptCaptureRecord(vaultKey, item.capture),
+    })),
+  );
+}
+
+export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null } = {}) {
+  let embedding = queryEmbedding;
+  if (!embedding?.length && query?.trim()) {
+    embedding = await embedText(query.trim());
+  }
+  if (!embedding?.length) return [];
+
   const res = await fetch('/api/captures/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query,
+      query_embedding: embedding,
       project,
       min_similarity: minSimilarity,
       limit,
@@ -53,3 +72,5 @@ export function formatRelativeTime(epoch) {
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
 }
+
+export { decryptCaptureList };

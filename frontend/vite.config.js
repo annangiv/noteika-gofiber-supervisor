@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => ({
     outDir: path.resolve(__dirname, '../static'),
     emptyOutDir: true,
   },
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers'],
+  },
   server: {
     port: 5173,
     proxy: {
