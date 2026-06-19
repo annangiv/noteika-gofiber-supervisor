@@ -229,7 +229,7 @@ export default function NotesPage() {
     return () => { cancelled = true; };
   }, [user, selectedProject, captures, isSearching]);
 
-  // 5. Semantic Search (debounced, project-scoped)
+  // 5. Semantic Search (debounced, whole docket)
   const runSemanticSearch = useCallback(async (query) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -243,9 +243,8 @@ export default function NotesPage() {
     addLog(`[API] Dispatching semantic query: "${trimmed}"`, 'info');
 
     try {
-      const projectScope = selectedProject !== 'Trash' ? selectedProject : '';
+      // Search the whole docket — sidebar project only filters the feed, not search
       const matches = await searchCaptures(trimmed, {
-        project: projectScope,
         minSimilarity: SIMILARITY.SEARCH_MIN,
         limit: 20,
       });
@@ -261,7 +260,7 @@ export default function NotesPage() {
     } catch (err) {
       showToast('Connection to embedding search failed', 'error');
     }
-  }, [selectedProject]);
+  }, []);
 
   const scheduleSemanticSearch = (query) => {
     if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
@@ -565,7 +564,7 @@ export default function NotesPage() {
                 setSearchQuery(e.target.value);
                 scheduleSemanticSearch(e.target.value);
               }}
-              placeholder={`Search ${selectedProject !== 'Trash' ? selectedProject : 'captures'} by meaning...`}
+              placeholder="Search all captures by meaning (e.g. 'breakfast shopping')..."
             />
             {searchQuery && (
               <button
@@ -582,6 +581,10 @@ export default function NotesPage() {
               </button>
             )}
           </div>
+
+          {isSearching && (
+            <p className="search-scope-note">Searching all projects — sidebar only filters the feed below.</p>
+          )}
 
           {/* CAPTURE FORM (Only show if not in Trash view) */}
           {selectedProject !== 'Trash' ? (
