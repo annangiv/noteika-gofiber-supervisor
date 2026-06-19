@@ -20,7 +20,7 @@ export async function saveCapture(vaultKey, {
   sourceUrl = '',
   type = null,
 } = {}) {
-  if (!vaultKey?.length) throw new Error('Vault not unlocked');
+  if (!vaultKey) throw new Error('Vault not unlocked');
   const trimmed = (body ?? '').trim();
   if (!trimmed) throw new Error('Empty note body');
 
@@ -50,7 +50,10 @@ export async function saveCapture(vaultKey, {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Save failed (${res.status})`);
+    const error = new Error(err.error || `Save failed (${res.status})`);
+    error.status = res.status;
+    error.payload = err;
+    throw error;
   }
   return res.json();
 }

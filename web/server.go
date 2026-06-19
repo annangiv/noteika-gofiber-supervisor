@@ -51,7 +51,8 @@ func (s *Server) Start(port string) error {
 
 	// Setup handlers
 	authHandler := NewAuthHandler(s.gateway)
-	capturesHandler := NewCapturesHandler(s.gateway)
+	billingHandler := NewBillingHandler(s.gateway)
+	capturesHandler := NewCapturesHandler(s.gateway, billingHandler)
 	vaultHandler := NewVaultHandler(s.gateway)
 	accountHandler := NewAccountHandler(s.gateway)
 	debugHandler := NewDebugHandler(s.supervisor, s.registry, s.gateway)
@@ -203,6 +204,9 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/auth/:provider/callback", authHandler.Callback)
 	s.app.Get("/auth/logout", authHandler.Logout)
 
+	// Stripe webhook (no session auth — verified by signature)
+	s.app.Post("/webhooks/stripe", billingHandler.Webhook)
+
 	// ==========================================
 	// API SECURE ROUTES (REQUIRE MIDDLEWARE)
 	// ==========================================
@@ -228,6 +232,9 @@ func (s *Server) Start(port string) error {
 	api.Get("/account/export", accountHandler.Export)
 	api.Patch("/account/settings", accountHandler.UpdateSettings)
 	api.Delete("/account", accountHandler.DeleteAccount)
+	api.Get("/billing/status", billingHandler.BillingStatus)
+	api.Post("/billing/checkout", billingHandler.CreateCheckout)
+	api.Post("/billing/portal", billingHandler.CreatePortal)
 
 	// Debug & Telemetry
 	api.Post("/debug/crash", debugHandler.Crash)

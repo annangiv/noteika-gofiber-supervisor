@@ -27,8 +27,19 @@ function queryTerms(query) {
   return (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
 
-/** How strongly decrypted capture text mentions query terms (title > tags > body). */
-function captureTextMatchScore(query, capture) {
+export function isNumericQuery(query) {
+  return /^\d+$/.test((query ?? '').trim());
+}
+
+export function isSingleTermQuery(query) {
+  return queryTerms(query).length === 1;
+}
+
+/**
+ * Full-text score: every query term must appear (title > tags > body).
+ * Returns 0 if any term is missing.
+ */
+export function captureTextMatchScore(query, capture) {
   const terms = queryTerms(query);
   if (!terms.length || !capture) return 0;
 
@@ -41,39 +52,93 @@ function captureTextMatchScore(query, capture) {
     if (title.includes(term)) score += 3;
     else if (tags.includes(term)) score += 2;
     else if (body.includes(term)) score += 1;
+    else return 0;
   }
   return score;
 }
 
-/**
- * After decrypt: prefer notes that literally mention the query.
- * Single-word searches drop embedding-only noise when a text match exists
- * (e.g. "noteika" should not surface grocery notes at 63%).
- */
-export function rerankSearchResults(query, results) {
-  if (!Array.isArray(results) || results.length === 0) return results ?? [];
+async function fetchAllDecryptedCaptures(vaultKey) {
+  if (!vaultKey) return [];
+  const res = await fetch('/api/captures');
+  if (!res.ok) return [];
+  const raw = await res.json();
+  return decryptCaptureList(vaultKey, Array.isArray(raw) ? raw : []);
+}
 
+/** Client-side full-text search on decrypted notes (E2E-safe). */
+export function fullTextSearchCaptures(allCaptures, query, { limit = 20 } = {}) {
   const terms = queryTerms(query);
-  if (!terms.length) return results;
+  if (!terms.length || !Array.isArray(allCaptures)) return [];
 
-  const scored = results.map((item) => ({
-    ...item,
-    textMatch: captureTextMatchScore(query, item.capture),
-  }));
+  return allCaptures
+    .map((capture) => ({ capture, textMatch: captureTextMatchScore(query, capture) }))
+    .filter((item) => item.textMatch > 0)
+    .sort((a, b) => b.textMatch - a.textMatch)
+    .slice(0, limit)
+    .map(({ capture, textMatch }) => ({
+      capture,
+      similarity: Math.min(0.99, 0.72 + textMatch * 0.04),
+      exactMatch: true,
+    }));
+}
 
-  const hasTextMatch = scored.some((item) => item.textMatch > 0);
-  let ranked = scored;
+/**
+ * Merge server semantic hits with client full-text hits.
+ * Exact matches first, then by text score, then embedding similarity.
+ */
+export function mergeHybridSearchResults(semanticResults, ftsResults, query, { limit = 20 } = {}) {
+  const byId = new Map();
 
-  if (terms.length === 1 && hasTextMatch) {
-    ranked = scored.filter((item) => item.textMatch > 0);
+  for (const item of ftsResults) {
+    byId.set(item.capture.id, { ...item, exactMatch: true });
   }
 
-  ranked.sort((a, b) => {
-    if (b.textMatch !== a.textMatch) return b.textMatch - a.textMatch;
-    return b.similarity - a.similarity;
-  });
+  for (const item of semanticResults) {
+    const textMatch = captureTextMatchScore(query, item.capture);
+    const existing = byId.get(item.capture.id);
+    if (existing) {
+      existing.similarity = Math.max(existing.similarity, item.similarity);
+      if (textMatch > 0) existing.exactMatch = true;
+    } else {
+      byId.set(item.capture.id, {
+        ...item,
+        exactMatch: textMatch > 0,
+      });
+    }
+  }
 
-  return ranked.map(({ textMatch: _textMatch, ...item }) => item);
+  return [...byId.values()]
+    .sort((a, b) => {
+      const aExact = a.exactMatch ? 1 : 0;
+      const bExact = b.exactMatch ? 1 : 0;
+      if (bExact !== aExact) return bExact - aExact;
+      const aText = captureTextMatchScore(query, a.capture);
+      const bText = captureTextMatchScore(query, b.capture);
+      if (bText !== aText) return bText - aText;
+      return b.similarity - a.similarity;
+    })
+    .slice(0, limit);
+}
+
+/**
+ * Hybrid search: server semantic (vectors only) + client full-text on decrypted notes.
+ */
+export async function searchCapturesForUser(vaultKey, query, {
+  minSimilarity = DEFAULT_SEARCH_MIN,
+  limit = 20,
+} = {}) {
+  const trimmed = (query ?? '').trim();
+  if (!trimmed || !vaultKey) return [];
+
+  const [semanticRaw, allCaptures] = await Promise.all([
+    searchCaptures(trimmed, { minSimilarity, limit: Math.max(limit, 30) }),
+    fetchAllDecryptedCaptures(vaultKey),
+  ]);
+
+  const semantic = await decryptSearchResults(vaultKey, semanticRaw);
+  const fts = fullTextSearchCaptures(allCaptures, trimmed, { limit: Math.max(limit, 30) });
+
+  return mergeHybridSearchResults(semantic, fts, trimmed, { limit });
 }
 
 export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {

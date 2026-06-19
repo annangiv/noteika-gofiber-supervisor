@@ -25,6 +25,7 @@ type User struct {
 	OAuthID        string `json:"oauth_id"`
 	FullName            string  `json:"full_name"`
 	Tier                string  `json:"tier"`
+	StripeCustomerID    string  `json:"stripe_customer_id,omitempty"`
 	SearchMinSimilarity float32 `json:"search_min_similarity,omitempty"`
 	EncryptionSalt      []byte  `json:"encryption_salt,omitempty"`
 	CreatedAt           int64   `json:"created_at"`
@@ -100,7 +101,17 @@ func (r *BadgerRepo) SaveUser(user User) error {
 		// Save user secondary index (email_hash -> user_id)
 		emailHashHex := hex.EncodeToString(user.EmailHash)
 		indexKey := []byte(fmt.Sprintf("user:email_hash:%s", emailHashHex))
-		return txn.Set(indexKey, []byte(user.ID))
+		if err := txn.Set(indexKey, []byte(user.ID)); err != nil {
+			return err
+		}
+
+		if user.StripeCustomerID != "" {
+			stripeKey := []byte(fmt.Sprintf("user:stripe_customer:%s", user.StripeCustomerID))
+			if err := txn.Set(stripeKey, []byte(user.ID)); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -162,6 +173,72 @@ func (r *BadgerRepo) GetUserByEmailHash(hash []byte) (User, error) {
 	return user, err
 }
 
+func (r *BadgerRepo) GetUserByStripeCustomerID(customerID string) (User, error) {
+	var user User
+	err := r.db.View(func(txn *badger.Txn) error {
+		indexKey := []byte(fmt.Sprintf("user:stripe_customer:%s", customerID))
+		item, err := txn.Get(indexKey)
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		var userID string
+		if err := item.Value(func(val []byte) error {
+			userID = string(val)
+			return nil
+		}); err != nil {
+			return err
+		}
+
+		userKey := []byte(fmt.Sprintf("user:id:%s", userID))
+		userItem, err := txn.Get(userKey)
+		if err != nil {
+			if err == badger.ErrKeyNotFound {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		return userItem.Value(func(val []byte) error {
+			return json.Unmarshal(val, &user)
+		})
+	})
+	return user, err
+}
+
+func (r *BadgerRepo) CountActiveCaptures(userID string) (int, error) {
+	count := 0
+	err := r.db.View(func(txn *badger.Txn) error {
+		prefix := []byte(fmt.Sprintf("capture:%s:", userID))
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			err := it.Item().Value(func(val []byte) error {
+				var capture Capture
+				if err := json.Unmarshal(val, &capture); err != nil {
+					return err
+				}
+				if capture.DeletedAt == 0 {
+					count++
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return count, err
+}
+
 func (r *BadgerRepo) DeleteUser(id string) error {
 	return r.DeleteUserAndData(id)
 }
@@ -202,7 +279,16 @@ func (r *BadgerRepo) DeleteUserAndData(userID string) error {
 
 		emailHashHex := hex.EncodeToString(user.EmailHash)
 		indexKey := []byte(fmt.Sprintf("user:email_hash:%s", emailHashHex))
-		return txn.Delete(indexKey)
+		if err := txn.Delete(indexKey); err != nil {
+			return err
+		}
+		if user.StripeCustomerID != "" {
+			stripeKey := []byte(fmt.Sprintf("user:stripe_customer:%s", user.StripeCustomerID))
+			if err := txn.Delete(stripeKey); err != nil && err != badger.ErrKeyNotFound {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

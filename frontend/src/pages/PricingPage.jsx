@@ -6,32 +6,35 @@ const plans = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    description: 'Everything you need to stop losing prompts and notes.',
+    description: 'Try Noteika — encrypted notes with semantic search.',
     features: [
-      'Unlimited captures',
-      'Semantic search',
+      '10 encrypted captures',
+      'Semantic + exact search',
       'Project folders',
-      'Duplicate resurfacing',
+      'Duplicate warnings',
       'JSON export',
     ],
     cta: 'Get started',
-    highlighted: true,
+    href: '/login',
+    highlighted: false,
+    disabled: false,
   },
   {
     name: 'Pro',
     price: '$8',
     period: '/ month',
-    description: 'For power users who live across many projects.',
+    description: 'Unlimited saves for daily use across projects.',
     features: [
+      'Unlimited encrypted captures',
+      'Semantic + exact search',
       'Everything in Free',
-      'Priority embedding queue',
-      'Advanced export formats',
-      'Email support',
-      'Early access features',
+      'Priority support',
+      'Cancel anytime',
     ],
-    cta: 'Coming soon',
-    highlighted: false,
-    disabled: true,
+    cta: 'Sign in to upgrade',
+    href: '/login',
+    highlighted: true,
+    disabled: false,
   },
 ];
 
@@ -43,7 +46,7 @@ export default function PricingPage() {
           <p className="eyebrow">Pricing</p>
           <h1>Simple, honest pricing</h1>
           <p className="page-lead">
-            Start free. Upgrade when Noteika becomes part of your daily workflow.
+            Start free with 10 notes. Upgrade when Noteika becomes part of your daily workflow.
           </p>
         </div>
       </section>
@@ -52,7 +55,7 @@ export default function PricingPage() {
         <div className="container pricing-grid">
           {plans.map((plan) => (
             <article key={plan.name} className={`pricing-card ${plan.highlighted ? 'highlighted' : ''}`}>
-              {plan.highlighted && <span className="pricing-badge">Most popular</span>}
+              {plan.highlighted && <span className="pricing-badge">Unlimited saves</span>}
               <h2>{plan.name}</h2>
               <div className="pricing-price">
                 <span className="price">{plan.price}</span>
@@ -67,7 +70,9 @@ export default function PricingPage() {
               {plan.disabled ? (
                 <button className="btn btn-secondary btn-block" disabled>{plan.cta}</button>
               ) : (
-                <Link to="/login" className="btn btn-primary btn-block">{plan.cta}</Link>
+                <Link to={plan.href} className={`btn ${plan.highlighted ? 'btn-primary' : 'btn-secondary'} btn-block`}>
+                  {plan.cta}
+                </Link>
               )}
             </article>
           ))}
@@ -79,11 +84,11 @@ export default function PricingPage() {
           <h2>FAQ</h2>
           <div className="faq-item">
             <h3>Is my data private?</h3>
-            <p>Yes. Your captures are stored in your own instance. Export or delete your account anytime.</p>
+            <p>Your note text is encrypted on your device before it reaches our servers. We store embedding vectors for search, encrypted at rest.</p>
           </div>
           <div className="faq-item">
-            <h3>Do I need to organize everything upfront?</h3>
-            <p>No. Paste first. Projects are optional. Noteika finds notes by meaning later.</p>
+            <h3>What counts toward the free limit?</h3>
+            <p>Saved captures (not trash). Search works on all your notes. Deleted notes in Trash don&apos;t count toward the active limit.</p>
           </div>
         </div>
       </section>

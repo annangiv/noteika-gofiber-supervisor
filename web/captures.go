@@ -28,10 +28,11 @@ const (
 
 type CapturesHandler struct {
 	gateway *actor.ActorGateway
+	billing *BillingHandler
 }
 
-func NewCapturesHandler(gateway *actor.ActorGateway) *CapturesHandler {
-	return &CapturesHandler{gateway: gateway}
+func NewCapturesHandler(gateway *actor.ActorGateway, billing *BillingHandler) *CapturesHandler {
+	return &CapturesHandler{gateway: gateway, billing: billing}
 }
 
 // Generate an automatic title from capture body text
@@ -198,6 +199,14 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
 		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	user, err := h.billing.loadUser(userID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load user profile"})
+	}
+	if resp := h.billing.EnforceCaptureLimit(c, user); resp != nil {
+		return resp
 	}
 
 	var input struct {

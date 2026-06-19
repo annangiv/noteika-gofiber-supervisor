@@ -141,6 +141,11 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	if existingUser.Tier != "" {
 		user.Tier = existingUser.Tier
 	}
+	if isOwnerEmail(userProfile.Email) {
+		user.Tier = db.TierPro
+	}
+	user.StripeCustomerID = existingUser.StripeCustomerID
+	user.EncryptionSalt = existingUser.EncryptionSalt
 
 	// Upsert User
 	_, err = h.gateway.Send(actor.TypeUpsertUser, actor.UpsertUserPayload{User: user}, 5*time.Second)
@@ -223,12 +228,21 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 		decryptedEmail = "unknown"
 	}
 
+	billing := BillingHandler{gateway: h.gateway}
+	captureCount, _ := billing.activeCaptureCount(userID)
+	proAccess := billing.userHasProAccess(user)
+
 	return c.JSON(fiber.Map{
 		"id":                    user.ID,
 		"email":                 decryptedEmail,
 		"oauth_provider":        user.OAuthProvider,
 		"full_name":             user.FullName,
 		"tier":                  user.Tier,
+		"pro_access":            proAccess,
+		"capture_count":         captureCount,
+		"capture_limit":         db.FreeCaptureLimit(),
+		"stripe_enabled":        StripeEnabled(),
+		"has_stripe_customer":   user.StripeCustomerID != "",
 		"created_at":            user.CreatedAt,
 		"search_min_similarity": db.EffectiveSearchMinSimilarity(user.SearchMinSimilarity),
 	})

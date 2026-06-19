@@ -66,6 +66,18 @@ func (a *VaultActor) handleMessage(msg Message) {
 		resp.Data = user
 		resp.Err = err
 
+	case TypeGetUserByStripeCustomer:
+		payload := msg.Payload.(GetUserByStripeCustomerPayload)
+		user, err := a.repo.GetUserByStripeCustomerID(payload.CustomerID)
+		resp.Data = user
+		resp.Err = err
+
+	case TypeCountActiveCaptures:
+		payload := msg.Payload.(CountActiveCapturesPayload)
+		count, err := a.repo.CountActiveCaptures(payload.UserID)
+		resp.Data = count
+		resp.Err = err
+
 	case TypeDeleteUser:
 		payload := msg.Payload.(DeleteUserPayload)
 		err := a.repo.DeleteUser(payload.ID)

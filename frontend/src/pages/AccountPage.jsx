@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DEFAULT_SEARCH_MIN,
   SEARCH_MIN_FLOOR,
@@ -17,9 +17,12 @@ export default function AccountPage() {
   const [searchMinPct, setSearchMinPct] = useState(Math.round(DEFAULT_SEARCH_MIN * 100));
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingNotice, setBillingNotice] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const loadUser = () =>
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => {
@@ -27,10 +30,53 @@ export default function AccountPage() {
         if (data.search_min_similarity) {
           setSearchMinPct(Math.round(data.search_min_similarity * 100));
         }
-      })
+      });
+
+  useEffect(() => {
+    loadUser()
       .catch(() => navigate('/login'))
       .finally(() => setLoading(false));
   }, [navigate]);
+
+  useEffect(() => {
+    const billing = searchParams.get('billing');
+    if (billing === 'success') {
+      setBillingNotice('Welcome to Pro — your account is upgraded.');
+      loadUser().catch(() => {});
+      setSearchParams({}, { replace: true });
+    } else if (billing === 'cancel') {
+      setBillingNotice('Checkout canceled.');
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const startCheckout = async () => {
+    setBillingLoading(true);
+    setBillingNotice('');
+    try {
+      const res = await fetch('/api/billing/checkout', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'checkout failed');
+      window.location.href = data.url;
+    } catch (err) {
+      setBillingNotice(err.message || 'Could not start checkout.');
+      setBillingLoading(false);
+    }
+  };
+
+  const openPortal = async () => {
+    setBillingLoading(true);
+    setBillingNotice('');
+    try {
+      const res = await fetch('/api/billing/portal', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'portal failed');
+      window.location.href = data.url;
+    } catch (err) {
+      setBillingNotice(err.message || 'Could not open billing portal.');
+      setBillingLoading(false);
+    }
+  };
 
   const handleSaveSettings = async () => {
     setSettingsSaving(true);
@@ -97,6 +143,9 @@ export default function AccountPage() {
     );
   }
 
+  const isPro = user?.pro_access;
+  const atLimit = !isPro && user?.capture_count >= user?.capture_limit;
+
   return (
     <div className="site">
       <header className="site-header">
@@ -116,6 +165,10 @@ export default function AccountPage() {
           <p className="eyebrow">Account</p>
           <h1>Your account</h1>
 
+          {billingNotice && (
+            <p className="settings-saved" style={{ marginBottom: '16px' }}>{billingNotice}</p>
+          )}
+
           <div className="account-card">
             <h2>Profile</h2>
             <dl className="account-dl">
@@ -124,10 +177,55 @@ export default function AccountPage() {
               <dt>Email</dt>
               <dd>{user?.email || '—'}</dd>
               <dt>Plan</dt>
-              <dd className="capitalize">{user?.tier || 'free'}</dd>
+              <dd className="capitalize">{isPro ? 'Pro' : 'Free'}</dd>
+              <dt>Notes saved</dt>
+              <dd>
+                {user?.capture_count ?? 0}
+                {!isPro && user?.capture_limit ? ` / ${user.capture_limit} free` : ' (unlimited)'}
+              </dd>
               <dt>Member since</dt>
               <dd>{user?.created_at ? new Date(user.created_at * 1000).toLocaleDateString() : '—'}</dd>
             </dl>
+          </div>
+
+          <div className="account-card">
+            <h2>Billing</h2>
+            {isPro ? (
+              <>
+                <p className="account-desc">
+                  You have Pro — unlimited encrypted captures and semantic search.
+                </p>
+                {user?.stripe_enabled && user?.has_stripe_customer && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={openPortal}
+                    disabled={billingLoading}
+                  >
+                    {billingLoading ? 'Opening…' : 'Manage subscription'}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="account-desc">
+                  Free plan includes {user?.capture_limit ?? 10} encrypted captures.
+                  {atLimit ? ' You’ve reached the limit — upgrade to keep saving.' : ' Search stays unlimited on your notes.'}
+                </p>
+                {user?.stripe_enabled ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={startCheckout}
+                    disabled={billingLoading}
+                  >
+                    {billingLoading ? 'Redirecting…' : 'Upgrade to Pro — $8/mo'}
+                  </button>
+                ) : (
+                  <p className="settings-hint">Billing is not configured on this server yet.</p>
+                )}
+              </>
+            )}
           </div>
 
           <div className="account-card">

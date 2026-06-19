@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
-  SIMILARITY, searchCaptures, decryptSearchResults,
-  decryptCaptureList, findDuplicateMatches, formatRelativeTime, DEFAULT_SEARCH_MIN,
-  rerankSearchResults,
+  SIMILARITY, decryptCaptureList, findDuplicateMatches, formatRelativeTime, DEFAULT_SEARCH_MIN,
+  searchCapturesForUser,
 } from '../lib/notesApi';
 import { useVault } from '../context/VaultContext';
 import VaultGate from '../components/VaultGate';
@@ -14,6 +13,10 @@ import {
 } from '../lib/captureContent';
 import { embedPassage } from '../lib/embeddings';
 import { encryptCapturePayload } from '../lib/crypto';
+import PrivacyTrustCard, { PrivacyActivityPanel } from '../components/PrivacyPanel';
+import {
+  createSaveActivity, createSearchActivity, createDuplicateCheckActivity,
+} from '../lib/privacyActivity';
 import '../notes.css';
 
 export default function NotesPage() {
@@ -43,12 +46,15 @@ export default function NotesPage() {
   const [saveDuplicateConfirm, setSaveDuplicateConfirm] = useState(null);
   const duplicateDebounceTimer = useRef(null);
   const searchDebounceTimer = useRef(null);
+  const lastDupPrivacyRef = useRef('');
 
-  // Telemetry logs states
-  const [telemetry, setTelemetry] = useState({ restarts: 0, mailbox_addr: '0x00000000', status: 'Unknown' });
-  const [logs, setLogs] = useState([]);
-  const prevRestarts = useRef(0);
-  const prevStatus = useRef('');
+  // Privacy activity trace (save / search transparency)
+  const [privacyEvents, setPrivacyEvents] = useState([]);
+
+  const pushPrivacyEvent = useCallback((event) => {
+    if (!event) return;
+    setPrivacyEvents((prev) => [event, ...prev].slice(0, 8));
+  }, []);
 
   // Modals state
   const [editingCapture, setEditingCapture] = useState(null);
@@ -67,11 +73,6 @@ export default function NotesPage() {
     }, 4000);
   };
 
-  const addLog = (message, type = 'info') => {
-    const timeStr = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev, { time: timeStr, message, type }]);
-  };
-
   // 1. Authenticate on mount
   useEffect(() => {
     async function checkAuth() {
@@ -80,7 +81,6 @@ export default function NotesPage() {
         if (res.ok) {
           const data = await res.json();
           setUser(data);
-          addLog(`[System] Supervised user session loaded: ${data.email}`, 'system');
         } else {
           setUser(null);
         }
@@ -138,40 +138,7 @@ export default function NotesPage() {
     }
   }, [user, selectedProject, vaultKey]);
 
-  // 3. Telemetry Log Polling
-  useEffect(() => {
-    if (!user) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/debug/stats');
-        if (res.ok) {
-          const stats = await res.json();
-          setTelemetry(stats);
-
-          // Log supervisor changes
-          if (prevRestarts.current !== undefined && stats.restarts > prevRestarts.current) {
-            addLog(`[WARNING] VaultActor restarted! Supervisor recovered state. Restarts: ${stats.restarts}`, 'warning');
-            showToast('Database recovery occurred!', 'error');
-            loadCaptures();
-            loadProjects();
-          }
-          prevRestarts.current = stats.restarts;
-
-          if (prevStatus.current && stats.status !== prevStatus.current) {
-            addLog(`[SYSTEM] Supervisor state changed: ${prevStatus.current} -> ${stats.status}`, 'system');
-          }
-          prevStatus.current = stats.status;
-        }
-      } catch (err) {
-        console.error('Telemetry fetch failed:', err);
-      }
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, [user]);
-
-  // 4. Proactive duplicate warning while typing (whole docket, not project-scoped)
+  // 3. Proactive duplicate warning while typing (whole docket, not project-scoped)
   useEffect(() => {
     const trimmed = formBody.trim();
     if (!vaultKey || trimmed.length < 8) {
@@ -185,15 +152,22 @@ export default function NotesPage() {
       try {
         const matches = await findDuplicateMatches(trimmed, formTags, vaultKey, { limit: 5 });
         setDuplicateWarning(matches);
+        const sig = matches.map((m) => m.id).join(',');
+        if (matches.length > 0 && sig !== lastDupPrivacyRef.current) {
+          lastDupPrivacyRef.current = sig;
+          pushPrivacyEvent(createDuplicateCheckActivity(matches.length));
+        } else if (matches.length === 0) {
+          lastDupPrivacyRef.current = '';
+        }
       } catch (err) {
         console.error('Proactive duplicate check failed:', err);
       }
     }, 500);
 
     return () => clearTimeout(duplicateDebounceTimer.current);
-  }, [formBody, formTags, vaultKey]);
+  }, [formBody, formTags, vaultKey, pushPrivacyEvent]);
 
-  // 5. Semantic Search (debounced, whole docket)
+  // 4. Semantic Search (debounced, whole docket)
   const searchMinSimilarity = user?.search_min_similarity ?? DEFAULT_SEARCH_MIN;
 
   const runSemanticSearch = useCallback(async (query) => {
@@ -205,20 +179,19 @@ export default function NotesPage() {
     }
 
     setIsSearching(true);
-    addLog('[API] Dispatching semantic query (encrypted vector)...', 'info');
 
     try {
-      const matches = await searchCaptures(trimmed, {
+      const results = await searchCapturesForUser(vaultKey, trimmed, {
         minSimilarity: searchMinSimilarity,
         limit: 20,
       });
-      const decrypted = await decryptSearchResults(vaultKey, matches);
-      setSearchResults(rerankSearchResults(trimmed, decrypted));
-      addLog(`[API] Found ${decrypted.length} semantic matches. Top match score: ${decrypted[0] ? Math.round(decrypted[0].similarity * 100) : 0}%`, 'info');
+      setSearchResults(results);
+      const exactCount = results.filter((r) => r.exactMatch).length;
+      pushPrivacyEvent(createSearchActivity(trimmed, results.length, exactCount));
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
     }
-  }, [searchMinSimilarity, vaultKey]);
+  }, [searchMinSimilarity, vaultKey, pushPrivacyEvent]);
 
   const scheduleSemanticSearch = (query) => {
     if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
@@ -236,26 +209,32 @@ export default function NotesPage() {
   const performSave = async () => {
     if (!vaultKey) return;
     setIsSaving(true);
-    addLog(`[API] Saving encrypted capture to project "${formProject || selectedProject || 'Inbox'}"...`, 'info');
+    const project = formProject || selectedProject || 'Inbox';
 
     try {
       await saveCapture(vaultKey, {
         body: formBody,
         tags: formTags,
-        project: formProject || selectedProject || 'Inbox',
+        project,
         sourceUrl: formSourceUrl,
       });
       showToast('Capture saved successfully');
+      pushPrivacyEvent(createSaveActivity(project));
       setFormBody('');
       setFormTags('');
       setFormProject('');
       setFormSourceUrl('');
       setDuplicateWarning([]);
       setSaveDuplicateConfirm(null);
+      setUser((u) => (u && !u.pro_access ? { ...u, capture_count: (u.capture_count ?? 0) + 1 } : u));
       loadCaptures();
       loadProjects();
     } catch (err) {
-      showToast('Save failed — check vault and model', 'error');
+      if (err.status === 402) {
+        showToast(`Free limit reached (${err.payload?.capture_count ?? '?'}/${err.payload?.capture_limit ?? '?'}). Upgrade in Account.`, 'error');
+      } else {
+        showToast('Save failed — check vault and model', 'error');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -284,8 +263,6 @@ export default function NotesPage() {
     e.preventDefault();
     if (!editingCapture || !editingCapture.body.trim() || !vaultKey) return;
 
-    addLog(`[API] Updating capture "${editingCapture.id}"...`, 'info');
-
     try {
       const title = editingCapture.title || generateAutoTitle(editingCapture.body);
       const tags = editingCapture.tags ?? [];
@@ -313,6 +290,7 @@ export default function NotesPage() {
 
       if (res.ok) {
         showToast('Capture updated');
+        pushPrivacyEvent(createSaveActivity(editingCapture.project, { title: 'Capture updated' }));
         setEditingCapture(null);
         loadCaptures();
         loadProjects();
@@ -329,7 +307,6 @@ export default function NotesPage() {
     if (!deletingCapture) return;
 
     const isSoft = deletingCapture.deleted_at === 0 || !deletingCapture.deleted_at;
-    addLog(`[API] Executing delete for "${deletingCapture.id}" (Soft: ${isSoft})...`, 'info');
 
     try {
       const res = await fetch(`/api/captures/${deletingCapture.id}`, {
@@ -352,7 +329,6 @@ export default function NotesPage() {
 
   // 9. Restore capture
   const handleRestore = async (id) => {
-    addLog(`[API] Restoring capture "${id}"...`, 'info');
     try {
       const res = await fetch(`/api/captures/restore/${id}`, {
         method: 'POST',
@@ -371,7 +347,6 @@ export default function NotesPage() {
 
   // 10. Empty Trash
   const handleEmptyTrash = async () => {
-    addLog('[API] Emptying entire Trash folder...', 'warning');
     try {
       const res = await fetch('/api/captures/empty-trash', {
         method: 'POST',
@@ -387,16 +362,6 @@ export default function NotesPage() {
       }
     } catch (err) {
       showToast('Failed to empty Trash', 'error');
-    }
-  };
-
-  // 11. Supervised crash trigger
-  const triggerCrash = async () => {
-    addLog('[SYSTEM] Dispatching debug/crash command to VaultActor...', 'warning');
-    try {
-      await fetch('/api/debug/crash', { method: 'POST' });
-    } catch (err) {
-      // The actor crashed, so fetch fails or gets closed. This is expected.
     }
   };
 
@@ -441,9 +406,17 @@ export default function NotesPage() {
             Notes
           </button>
           <span className="badge badge-ready">
-            Encrypted · semantic search
+            Encrypted · hybrid search
           </span>
           <div className="notes-header-right">
+            {user && !user.pro_access && user.capture_limit != null && (
+              <span className="plan-usage-badge" title="Free plan capture limit">
+                {user.capture_count ?? 0} / {user.capture_limit} notes
+              </span>
+            )}
+            {user?.pro_access && (
+              <span className="plan-usage-badge plan-usage-pro">Pro</span>
+            )}
             <div className="user-info">
               <span className="user-name">{user.full_name || 'User'}</span>
               <span className="user-email">{user.email || ''}</span>
@@ -489,28 +462,7 @@ export default function NotesPage() {
             </ul>
           </div>
 
-          <div className="glass-card telemetry-stats-container">
-            <h2><i className="fa-solid fa-gauge-high"></i> Actor Telemetry</h2>
-            <div className="stats-grid">
-              <div className="stat-card">
-                <span className="stat-label">Supervisor Status</span>
-                <span className={`stat-value ${telemetry.status === 'Running' ? 'text-glow-green' : 'text-glow-purple'}`}>
-                  {telemetry.status}
-                </span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Actor Restarts</span>
-                <span className="stat-value text-glow-purple">{telemetry.restarts}</span>
-              </div>
-              <div className="stat-card full-width">
-                <span className="stat-label">Mailbox Channel Address</span>
-                <span className="stat-value text-mono text-glow-blue">{telemetry.mailbox_addr}</span>
-              </div>
-              <button id="btn-crash-actor" className="btn btn-danger" onClick={triggerCrash}>
-                <i className="fa-solid fa-skull-crossbones"></i> Trigger Actor Crash
-              </button>
-            </div>
-          </div>
+          <PrivacyTrustCard />
         </aside>
 
         {/* FEED COLUMN */}
@@ -526,7 +478,7 @@ export default function NotesPage() {
                 setSearchQuery(e.target.value);
                 scheduleSemanticSearch(e.target.value);
               }}
-              placeholder="Search all captures by meaning (e.g. 'breakfast shopping')..."
+              placeholder="Search by meaning or exact words…"
             />
             {searchQuery && (
               <button
@@ -545,7 +497,7 @@ export default function NotesPage() {
 
           {isSearching && (
             <p className="search-scope-note">
-              Searching all projects (min {Math.round(searchMinSimilarity * 100)}% match) — sidebar only filters the feed below.
+              Searching all projects — meaning match from server, exact words on your device.
             </p>
           )}
 
@@ -820,6 +772,11 @@ export default function NotesPage() {
                                 <i className="fa-solid fa-brain"></i> Match: {Math.round(score * 100)}%
                               </span>
                             )}
+                            {isSearching && item.exactMatch && (
+                              <span className="card-badge exact-badge">
+                                <i className="fa-solid fa-font"></i> Exact
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="card-actions">
@@ -895,26 +852,7 @@ export default function NotesPage() {
             </div>
           </div>
 
-          {/* TELEMETRY LOGS */}
-          <div className="glass-card logs-panel">
-            <div className="logs-header">
-              <h2><i className="fa-solid fa-terminal"></i> Supervisor Event Log</h2>
-              <button id="btn-clear-logs" className="btn-icon" onClick={() => setLogs([])}>
-                <i className="fa-solid fa-trash-can"></i>
-              </button>
-            </div>
-            <div id="log-terminal" className="terminal-body">
-              {logs.length === 0 ? (
-                <div className="log-line system">[SYSTEM] Supervisor connected. Monitoring actor 'VaultActor'.</div>
-              ) : (
-                logs.map((log, idx) => (
-                  <div key={idx} className={`log-line ${log.type}`}>
-                    [{log.time}] {log.message}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <PrivacyActivityPanel events={privacyEvents} />
         </div>
       </div>
 

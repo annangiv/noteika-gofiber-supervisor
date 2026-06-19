@@ -30,6 +30,8 @@ const (
 	TypeUpsertUser          = "UpsertUser"
 	TypeGetUser             = "GetUser"
 	TypeGetUserByEmailHash  = "GetUserByEmailHash"
+	TypeGetUserByStripeCustomer = "GetUserByStripeCustomer"
+	TypeCountActiveCaptures = "CountActiveCaptures"
 	TypeDeleteUser          = "DeleteUser"
 	TypeSaveSession         = "SaveSession"
 	TypeGetSession          = "GetSession"
@@ -54,6 +56,14 @@ type GetUserPayload struct {
 
 type GetUserByEmailHashPayload struct {
 	Hash []byte
+}
+
+type GetUserByStripeCustomerPayload struct {
+	CustomerID string
+}
+
+type CountActiveCapturesPayload struct {
+	UserID string
 }
 
 type DeleteUserPayload struct {
