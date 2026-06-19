@@ -63,6 +63,37 @@ func generateAutoTitle(body string) string {
 	return firstLine
 }
 
+// Classify the capture body text into note, link, qa, or code
+func classifyContentType(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return "note"
+	}
+
+	// 1. Link Detection: Starts with http:// or https:// and has no spaces or newlines
+	if (strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://")) && 
+		!strings.Contains(trimmed, "\n") && 
+		!strings.Contains(trimmed, " ") {
+		return "link"
+	}
+
+	// 2. Code Block Detection: Contains markdown code block tags
+	if strings.Contains(trimmed, "```") {
+		return "code"
+	}
+
+	// 3. Q&A Detection: Look for Q: and A: or User: and AI/Assistant:
+	bodyLower := strings.ToLower(trimmed)
+	if (strings.Contains(bodyLower, "q:") && strings.Contains(bodyLower, "a:")) ||
+		(strings.Contains(bodyLower, "user:") && strings.Contains(bodyLower, "assistant:")) ||
+		(strings.Contains(bodyLower, "user:") && strings.Contains(bodyLower, "ai:")) ||
+		(strings.Contains(bodyLower, "human:") && strings.Contains(bodyLower, "assistant:")) {
+		return "qa"
+	}
+
+	return "note"
+}
+
 // Helper to query python embeddings sidecar
 func getEmbedding(text string) ([]float32, error) {
 	payload := map[string]string{"text": text}
@@ -133,6 +164,8 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate semantic embedding"})
 	}
 
+	cType := classifyContentType(input.Body)
+
 	now := time.Now().Unix()
 	capture := db.Capture{
 		ID:        uuid.New().String(),
@@ -141,6 +174,7 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		Title:     title,
 		Body:      input.Body,
 		SourceURL: input.SourceURL,
+		Type:      cType,
 		Embedding: vector,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -273,6 +307,7 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to update semantic embedding"})
 		}
 		existing.Embedding = vector
+		existing.Type = classifyContentType(existing.Body)
 	}
 
 	existing.UpdatedAt = time.Now().Unix()

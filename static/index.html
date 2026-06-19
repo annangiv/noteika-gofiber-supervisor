@@ -165,6 +165,15 @@
                             <span class="captures-count" id="captures-count">0 items</span>
                         </div>
                         
+                        <!-- Search Resurface Banner -->
+                        <div id="search-resurface-banner" class="resurface-banner hidden">
+                            <div class="resurface-banner-left">
+                                <i class="fa-solid fa-lightbulb"></i>
+                                <span id="resurface-banner-text">You saved a similar capture:</span>
+                            </div>
+                            <button id="btn-resurface-view" class="btn-resurface-view">View Original</button>
+                        </div>
+                        
                         <div id="captures-feed" class="captures-feed-layout">
                             <!-- Dynamic cards load here -->
                         </div>
@@ -261,6 +270,9 @@
             
             projectList: document.getElementById('project-list'),
             modelStatusBadge: document.getElementById('model-status-badge'),
+            searchResurfaceBanner: document.getElementById('search-resurface-banner'),
+            resurfaceBannerText: document.getElementById('resurface-banner-text'),
+            btnResurfaceView: document.getElementById('btn-resurface-view'),
             
             telemetryStatus: document.getElementById('telemetry-status'),
             telemetryRestarts: document.getElementById('telemetry-restarts'),
@@ -434,9 +446,8 @@
 
         // Captures REST CRUD operations
         async function loadCaptures() {
-            if (isSearching) return; // Do not reload standard list while search is active
-
             try {
+                el.searchResurfaceBanner.classList.add('hidden');
                 const url = selectedProject ? `/api/captures?project=${encodeURIComponent(selectedProject)}` : '/api/captures';
                 const res = await fetch(url);
                 
@@ -469,8 +480,9 @@
                 const cap = isSearchResult ? item.capture : item;
                 const score = isSearchResult ? item.similarity : null;
 
+                const capType = cap.type || 'note';
                 const card = document.createElement('div');
-                card.className = 'glass-card capture-card fade-in';
+                card.className = `glass-card capture-card fade-in capture-card-${capType}`;
                 
                 // Highlight exact/high semantic match
                 if (score !== null && score > 0.40) {
@@ -480,7 +492,7 @@
                 // Setup edit trigger
                 card.onclick = (e) => {
                     // Prevent edit modal if delete or URL icons are clicked
-                    if (e.target.closest('.btn-delete') || e.target.closest('.link-out')) return;
+                    if (e.target.closest('.btn-delete') || e.target.closest('.link-out') || e.target.closest('.btn-visit-link')) return;
                     openEditModal(cap);
                 };
 
@@ -505,6 +517,61 @@
                     bodySnippet = bodySnippet.substring(0, 250) + "...";
                 }
 
+                // Layout rendering based on type
+                let bodyHtml = '';
+                if (capType === 'link') {
+                    const urlVal = cap.body.trim();
+                    bodyHtml = `
+                        <div class="link-card-body">
+                            <a href="${escapeHtml(urlVal)}" target="_blank" class="btn-visit-link link-out">
+                                <i class="fa-solid fa-square-arrow-up-right"></i> Visit Link
+                            </a>
+                        </div>`;
+                } else if (capType === 'code') {
+                    bodyHtml = `<pre><code>${bodySnippet}</code></pre>`;
+                } else if (capType === 'qa') {
+                    let qText = cap.body;
+                    let aText = "";
+                    const lowerBody = cap.body.toLowerCase();
+                    let splitIdx = -1;
+                    
+                    if (lowerBody.includes("q:") && lowerBody.includes("a:")) {
+                        splitIdx = lowerBody.indexOf("a:");
+                    } else if (lowerBody.includes("user:") && lowerBody.includes("assistant:")) {
+                        splitIdx = lowerBody.indexOf("assistant:");
+                    } else if (lowerBody.includes("user:") && lowerBody.includes("ai:")) {
+                        splitIdx = lowerBody.indexOf("ai:");
+                    } else if (lowerBody.includes("human:") && lowerBody.includes("assistant:")) {
+                        splitIdx = lowerBody.indexOf("assistant:");
+                    }
+
+                    if (splitIdx !== -1) {
+                        qText = cap.body.substring(0, splitIdx).trim();
+                        aText = cap.body.substring(splitIdx).trim();
+                        
+                        if (qText.toLowerCase().startsWith("q:")) qText = qText.substring(2).trim();
+                        else if (qText.toLowerCase().startsWith("user:")) qText = qText.substring(5).trim();
+                        else if (qText.toLowerCase().startsWith("human:")) qText = qText.substring(6).trim();
+
+                        if (aText.toLowerCase().startsWith("a:")) aText = aText.substring(2).trim();
+                        else if (aText.toLowerCase().startsWith("assistant:")) aText = aText.substring(10).trim();
+                        else if (aText.toLowerCase().startsWith("ai:")) aText = aText.substring(3).trim();
+
+                        if (qText.length > 120) qText = qText.substring(0, 120) + "...";
+                        if (aText.length > 150) aText = aText.substring(0, 150) + "...";
+                        
+                        bodyHtml = `
+                            <div class="qa-layout">
+                                <div class="qa-question"><i class="fa-regular fa-comments"></i> ${escapeHtml(qText)}</div>
+                                <div class="qa-answer">${escapeHtml(aText)}</div>
+                            </div>`;
+                    } else {
+                        bodyHtml = `<p class="capture-card-content">${bodySnippet.replace(/\n/g, '<br>')}</p>`;
+                    }
+                } else {
+                    bodyHtml = `<p class="capture-card-content">${bodySnippet.replace(/\n/g, '<br>')}</p>`;
+                }
+
                 card.innerHTML = `
                     <div class="capture-card-header">
                         <div class="card-title-area">
@@ -519,7 +586,7 @@
                             <button class="btn-delete" onclick="deleteCapture('${cap.id}')"><i class="fa-regular fa-trash-can"></i></button>
                         </div>
                     </div>
-                    <p class="capture-card-content">${bodySnippet.replace(/\n/g, '<br>')}</p>
+                    ${bodyHtml}
                     <div class="capture-card-footer">
                         <span><i class="fa-regular fa-clock"></i> ${timeStr}</span>
                     </div>`;
@@ -630,6 +697,17 @@
                 if (res.status === 200) {
                     const results = await res.json();
                     
+                    // Option 2 Resurfacing Banner logic
+                    if (results.length > 0 && results[0].similarity > 0.65) {
+                        const topMatch = results[0].capture;
+                        const pct = Math.round(results[0].similarity * 100);
+                        el.resurfaceBannerText.innerHTML = `You saved a similar solution on <strong>${new Date(topMatch.created_at * 1000).toLocaleDateString()}</strong>: <em>"${escapeHtml(topMatch.title)}"</em> (Match: ${pct}%)`;
+                        el.btnResurfaceView.onclick = () => openEditModal(topMatch);
+                        el.searchResurfaceBanner.classList.remove('hidden');
+                    } else {
+                        el.searchResurfaceBanner.classList.add('hidden');
+                    }
+
                     // Render results ranked by cosine similarity
                     renderCaptures(results, true);
                     addLog(`[Search] Completed semantic lookup for query: "${query}"`, 'success');
@@ -715,6 +793,7 @@
         el.btnClearSearch.addEventListener('click', () => {
             el.searchInput.value = '';
             el.btnClearSearch.classList.add('hidden');
+            el.searchResurfaceBanner.classList.add('hidden');
             isSearching = false;
             el.feedTitle.innerHTML = `<i class="fa-solid ${selectedProject === 'Inbox' ? 'fa-inbox' : 'fa-stream'}"></i> ${escapeHtml(selectedProject)} Feed`;
             loadCaptures();
