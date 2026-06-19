@@ -8,4 +8,13 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+    depends_on:
+      - embeddings
+    restart: unless-stopped
+
+  embeddings:
+    build:
+      context: ./embeddings
+    ports:
+      - "8001:8000"
     restart: unless-stopped

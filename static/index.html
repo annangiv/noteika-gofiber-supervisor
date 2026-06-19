@@ -10,9 +10,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- TensorFlow.js and Universal Sentence Encoder -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder"></script>
+
 </head>
 <body>
     <div class="stars"></div>
@@ -67,8 +65,8 @@
                         <i class="fa-solid fa-brain logo-icon"></i>
                         <h1>noteika</h1>
                     </div>
-                    <span class="badge" id="model-status-badge">
-                        <i class="fa-solid fa-spinner fa-spin"></i> Loading USE Model...
+                    <span class="badge badge-success-glow" id="model-status-badge">
+                        <i class="fa-solid fa-circle-check"></i> Semantic Search Ready
                     </span>
                 </div>
                 <div class="nav-right" id="user-profile">
@@ -119,7 +117,7 @@
                     <!-- Semantic Search Bar -->
                     <div class="search-container">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="search-input" placeholder="Search captures by meaning (e.g. 'oauth redirect handling')..." disabled>
+                        <input type="text" id="search-input" placeholder="Search captures by meaning (e.g. 'oauth redirect handling')...">
                         <button id="btn-clear-search" class="btn-clear-search hidden"><i class="fa-solid fa-xmark"></i></button>
                     </div>
 
@@ -142,7 +140,7 @@
                                         <input type="url" id="capture-source" placeholder="Source URL (optional)">
                                     </div>
                                 </div>
-                                <button type="submit" class="btn btn-primary" id="btn-save" disabled>
+                                <button type="submit" class="btn btn-primary" id="btn-save">
                                     <i class="fa-solid fa-cloud-arrow-up"></i> Capture
                                 </button>
                             </div>
@@ -220,7 +218,6 @@
     <script>
         // Global State
         let currentUser = null;
-        let tfModel = null;
         let projects = ["Inbox"];
         let selectedProject = "Inbox";
         let isSearching = false;
@@ -316,69 +313,7 @@
             return new Date(epoch * 1000).toLocaleDateString();
         }
 
-        // Load TensorFlow Universal Sentence Encoder model
-        async function loadEmbeddingModel() {
-            addLog("[Model] Initializing TensorFlow.js engine...", "info");
-            try {
-                // Wait for TF.js to be initialized
-                await tf.ready();
-                addLog("[Model] TF.js backend initialized. Loading USE model (~30MB)...", "info");
-                
-                tfModel = await use.load();
-                
-                addLog("[Model] Universal Sentence Encoder model loaded successfully!", "success");
-                el.modelStatusBadge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Semantic Search Ready`;
-                el.modelStatusBadge.className = "badge badge-success-glow";
-                
-                // Enable inputs
-                el.btnSave.disabled = false;
-                el.searchInput.disabled = false;
-                el.searchInput.placeholder = "Search captures by meaning (e.g. 'oauth redirect handling')...";
-            } catch (err) {
-                console.error("Failed to load USE model", err);
-                addLog("[Model] Error loading USE model. Falling back to keyword search.", "error");
-                el.modelStatusBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Mock Embedding Fallback`;
-                el.modelStatusBadge.className = "badge badge-warning-glow";
-                
-                // Fallback: still enable inputs
-                el.btnSave.disabled = false;
-                el.searchInput.disabled = false;
-                el.searchInput.placeholder = "Keyword-only search (Ollama/TF offline)...";
-            }
-        }
 
-        // Generate vector embedding client-side
-        async function computeEmbedding(text) {
-            if (!tfModel) {
-                // Return a mock vector of 512 floats based on text hashing if model is offline
-                addLog("[Model] USE offline, calculating fallback pseudo-vector...", "warning");
-                const vector = new Array(512).fill(0);
-                const words = text.toLowerCase().split(/\W+/);
-                words.forEach((word, idx) => {
-                    let hash = 0;
-                    for (let i = 0; i < word.length; i++) {
-                        hash = (hash << 5) - hash + word.charCodeAt(i);
-                        hash |= 0;
-                    }
-                    const pos = Math.abs(hash) % 512;
-                    vector[pos] += 1.0;
-                });
-                // L2 Normalize
-                let sumSq = vector.reduce((sum, v) => sum + v*v, 0);
-                if (sumSq > 0) {
-                    const norm = Math.sqrt(sumSq);
-                    for (let i=0; i<512; i++) vector[i] /= norm;
-                }
-                return vector;
-            }
-
-            // Real embedding generation
-            const embeddings = await tfModel.embed([text]);
-            const tensorArray = await embeddings.array();
-            // Free memory
-            embeddings.dispose();
-            return tensorArray[0];
-        }
 
         // Initialize App Auth State
         async function checkAuth() {
@@ -420,7 +355,7 @@
             loadCaptures();
             loadTelemetry();
             
-            loadEmbeddingModel(); // Lazy load the 30MB model
+
             
             if (pollingInterval) clearInterval(pollingInterval);
             pollingInterval = setInterval(loadTelemetry, 1500);
@@ -588,23 +523,17 @@
             const source_url = el.captureSource.value.trim();
 
             el.btnSave.disabled = true;
-            el.btnSave.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Embedding...`;
-            addLog(`[Model] Encoding capture text for semantic indices...`, 'info');
+            el.btnSave.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+            addLog(`[API] Dispatching save capture to VaultActor (embedding computed on backend)...`, 'info');
 
             try {
-                // Generate vector embedding client-side
-                const vector = await computeEmbedding(body);
-                addLog(`[Model] Created 512-dimension USE vector embedding`, 'success');
-
-                addLog(`[API] Dispatching save capture to VaultActor`, 'info');
                 const res = await fetch('/api/captures', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         body,
                         project,
-                        source_url,
-                        embedding: vector
+                        source_url
                     })
                 });
 
@@ -671,18 +600,15 @@
             el.capturesFeed.innerHTML = `
                 <div class="loader-container" style="height: 120px;">
                     <div class="spinner"></div>
-                    <p style="font-size: 13px;">Embedding search query...</p>
+                    <p style="font-size: 13px;">Searching semantic matches...</p>
                 </div>`;
 
             try {
-                // Generate embedding for query
-                const queryVector = await computeEmbedding(query);
-                
-                // POST query vector to search endpoint
+                // POST query text directly to search endpoint
                 const res = await fetch('/api/captures/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ embedding: queryVector })
+                    body: JSON.stringify({ query: query })
                 });
 
                 if (res.status === 200) {
@@ -817,10 +743,7 @@
             el.btnModalSave.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
 
             try {
-                addLog(`[Model] Regenerating embedding vector for edits...`, 'info');
-                const vector = await computeEmbedding(body);
-
-                addLog(`[API] Dispatching update capture to VaultActor`, 'info');
+                addLog(`[API] Dispatching update capture to VaultActor (embedding regenerated on backend)...`, 'info');
                 const res = await fetch(`/api/captures/${id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -828,8 +751,7 @@
                         title,
                         body,
                         project,
-                        source_url,
-                        embedding: vector
+                        source_url
                     })
                 });
 

@@ -1,6 +1,10 @@
 package web
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -59,7 +63,37 @@ func generateAutoTitle(body string) string {
 	return firstLine
 }
 
-// Create a new capture (with embedding vector)
+// Helper to query python embeddings sidecar
+func getEmbedding(text string) ([]float32, error) {
+	payload := map[string]string{"text": text}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal embedding payload: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post("http://embeddings:8000/embed", "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, fmt.Errorf("embedding service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("embedding service returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode embedding response: %w", err)
+	}
+
+	return result.Embedding, nil
+}
+
+// Create a new capture (generating embedding vector on backend)
 func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
@@ -67,11 +101,10 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string    `json:"title"`
-		Body      string    `json:"body"`
-		Project   string    `json:"project"`
-		SourceURL string    `json:"source_url"`
-		Embedding []float32 `json:"embedding"`
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		Project   string `json:"project"`
+		SourceURL string `json:"source_url"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -92,6 +125,14 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		project = "Inbox"
 	}
 
+	// Generate embedding vector on the backend
+	embeddingText := title + "\n" + input.Body
+	vector, err := getEmbedding(embeddingText)
+	if err != nil {
+		log.Printf("[CapturesHandler] Failed to get embedding from sidecar: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate semantic embedding"})
+	}
+
 	now := time.Now().Unix()
 	capture := db.Capture{
 		ID:        uuid.New().String(),
@@ -100,13 +141,13 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		Title:     title,
 		Body:      input.Body,
 		SourceURL: input.SourceURL,
-		Embedding: input.Embedding,
+		Embedding: vector,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
 	payload := actor.SaveCapturePayload{Capture: capture}
-	_, err := h.gateway.Send(actor.TypeSaveCapture, payload, 5*time.Second)
+	_, err = h.gateway.Send(actor.TypeSaveCapture, payload, 5*time.Second)
 	if err != nil {
 		log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to save capture"})
@@ -193,27 +234,29 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string    `json:"title"`
-		Body      string    `json:"body"`
-		Project   string    `json:"project"`
-		SourceURL string    `json:"source_url"`
-		Embedding []float32 `json:"embedding"`
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		Project   string `json:"project"`
+		SourceURL string `json:"source_url"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	if strings.TrimSpace(input.Body) != "" {
+	textChanged := false
+	if strings.TrimSpace(input.Body) != "" && input.Body != existing.Body {
 		existing.Body = input.Body
+		textChanged = true
 	}
 	
 	// Update title
-	if input.Title != "" {
+	if input.Title != "" && input.Title != existing.Title {
 		existing.Title = strings.TrimSpace(input.Title)
-	} else if strings.TrimSpace(input.Body) != "" {
+		textChanged = true
+	} else if textChanged {
 		// Regenerate title if body updated and title not provided
-		existing.Title = generateAutoTitle(input.Body)
+		existing.Title = generateAutoTitle(existing.Body)
 	}
 
 	if input.Project != "" {
@@ -222,8 +265,14 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	
 	existing.SourceURL = input.SourceURL
 
-	if len(input.Embedding) > 0 {
-		existing.Embedding = input.Embedding
+	if textChanged {
+		embeddingText := existing.Title + "\n" + existing.Body
+		vector, err := getEmbedding(embeddingText)
+		if err != nil {
+			log.Printf("[CapturesHandler] Failed to get embedding from sidecar: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to update semantic embedding"})
+		}
+		existing.Embedding = vector
 	}
 
 	existing.UpdatedAt = time.Now().Unix()
@@ -292,15 +341,22 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Embedding []float32 `json:"embedding"`
+		Query string `json:"query"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	if len(input.Embedding) == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "Query embedding vector is required"})
+	if strings.TrimSpace(input.Query) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Query text is required"})
+	}
+
+	// Fetch embedding from sidecar
+	queryVector, err := getEmbedding(input.Query)
+	if err != nil {
+		log.Printf("[CapturesHandler] Failed to get embedding for query: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate search embedding"})
 	}
 
 	// Fetch all captures for user
@@ -323,9 +379,9 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	for _, cap := range captures {
 		var similarity float32
 		if len(cap.Embedding) > 0 {
-			similarity = utils.CosineSimilarity(input.Embedding, cap.Embedding)
+			similarity = utils.CosineSimilarity(queryVector, cap.Embedding)
 		} else {
-			// Captures created without vector (or fallback mode) get a 0 score
+			// Captures created without vector get a 0 score
 			similarity = 0.0
 		}
 
