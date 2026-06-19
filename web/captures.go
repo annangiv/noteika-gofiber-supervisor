@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultSearchMinSimilarity = float32(0.35)
+	defaultSearchMinSimilarity = float32(0.70)
 	defaultSearchLimit         = 20
 	maxSearchLimit             = 50
 )

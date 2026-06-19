@@ -222,6 +222,7 @@ func (s *Server) Start(port string) error {
 
 	// Account
 	api.Get("/account/export", accountHandler.Export)
+	api.Patch("/account/settings", accountHandler.UpdateSettings)
 	api.Delete("/account", accountHandler.DeleteAccount)
 
 	// Debug & Telemetry

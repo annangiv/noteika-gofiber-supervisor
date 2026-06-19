@@ -23,9 +23,10 @@ type User struct {
 	EncryptedEmail []byte `json:"encrypted_email"`
 	OAuthProvider  string `json:"oauth_provider"`
 	OAuthID        string `json:"oauth_id"`
-	FullName       string `json:"full_name"`
-	Tier           string `json:"tier"`
-	CreatedAt      int64  `json:"created_at"`
+	FullName            string  `json:"full_name"`
+	Tier                string  `json:"tier"`
+	SearchMinSimilarity float32 `json:"search_min_similarity,omitempty"`
+	CreatedAt           int64   `json:"created_at"`
 	UpdatedAt      int64  `json:"updated_at"`
 }
 

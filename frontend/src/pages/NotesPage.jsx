@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { SIMILARITY, LAST_SEARCH_KEY, searchCaptures, formatRelativeTime } from '../lib/notesApi';
+import { SIMILARITY, LAST_SEARCH_KEY, searchCaptures, formatRelativeTime, DEFAULT_SEARCH_MIN } from '../lib/notesApi';
 import '../notes.css';
 
 export default function NotesPage() {
@@ -230,6 +230,8 @@ export default function NotesPage() {
   }, [user, selectedProject, captures, isSearching]);
 
   // 5. Semantic Search (debounced, whole docket)
+  const searchMinSimilarity = user?.search_min_similarity ?? DEFAULT_SEARCH_MIN;
+
   const runSemanticSearch = useCallback(async (query) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -243,9 +245,8 @@ export default function NotesPage() {
     addLog(`[API] Dispatching semantic query: "${trimmed}"`, 'info');
 
     try {
-      // Search the whole docket — sidebar project only filters the feed, not search
       const matches = await searchCaptures(trimmed, {
-        minSimilarity: SIMILARITY.SEARCH_MIN,
+        minSimilarity: searchMinSimilarity,
         limit: 20,
       });
       setSearchResults(matches);
@@ -260,7 +261,7 @@ export default function NotesPage() {
     } catch (err) {
       showToast('Connection to embedding search failed', 'error');
     }
-  }, []);
+  }, [searchMinSimilarity]);
 
   const scheduleSemanticSearch = (query) => {
     if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
@@ -583,7 +584,9 @@ export default function NotesPage() {
           </div>
 
           {isSearching && (
-            <p className="search-scope-note">Searching all projects — sidebar only filters the feed below.</p>
+            <p className="search-scope-note">
+              Searching all projects (min {Math.round(searchMinSimilarity * 100)}% match) — sidebar only filters the feed below.
+            </p>
           )}
 
           {/* CAPTURE FORM (Only show if not in Trash view) */}

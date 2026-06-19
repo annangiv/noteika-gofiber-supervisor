@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  DEFAULT_SEARCH_MIN,
+  SEARCH_MIN_FLOOR,
+  SEARCH_MIN_CEILING,
+  searchSensitivityHint,
+} from '../lib/notesApi';
 
 export default function AccountPage() {
   const [user, setUser] = useState(null);
@@ -8,15 +14,48 @@ export default function AccountPage() {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
+  const [searchMinPct, setSearchMinPct] = useState(Math.round(DEFAULT_SEARCH_MIN * 100));
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(setUser)
+      .then((data) => {
+        setUser(data);
+        if (data.search_min_similarity) {
+          setSearchMinPct(Math.round(data.search_min_similarity * 100));
+        }
+      })
       .catch(() => navigate('/login'))
       .finally(() => setLoading(false));
   }, [navigate]);
+
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+    try {
+      const res = await fetch('/api/account/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search_min_similarity: searchMinPct / 100 }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      const data = await res.json();
+      setUser((u) => ({ ...u, search_min_similarity: data.search_min_similarity }));
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch {
+      alert('Could not save settings. Please try again.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleResetSearchDefault = () => {
+    setSearchMinPct(Math.round(DEFAULT_SEARCH_MIN * 100));
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -89,6 +128,53 @@ export default function AccountPage() {
               <dt>Member since</dt>
               <dd>{user?.created_at ? new Date(user.created_at * 1000).toLocaleDateString() : '—'}</dd>
             </dl>
+          </div>
+
+          <div className="account-card">
+            <h2>Search sensitivity</h2>
+            <p className="account-desc">
+              How closely a capture must match your query to appear in search results.
+              Duplicate warnings while typing use a separate, lower threshold.
+            </p>
+            <div className="settings-slider-row">
+              <label htmlFor="search-min-slider" className="settings-slider-label">
+                Minimum match: <strong>{searchMinPct}%</strong>
+              </label>
+              <input
+                id="search-min-slider"
+                type="range"
+                min={SEARCH_MIN_FLOOR * 100}
+                max={SEARCH_MIN_CEILING * 100}
+                step={5}
+                value={searchMinPct}
+                onChange={(e) => setSearchMinPct(Number(e.target.value))}
+                className="settings-slider"
+              />
+              <div className="settings-slider-ticks">
+                <span>50% broad</span>
+                <span>70% default</span>
+                <span>85% strict</span>
+              </div>
+            </div>
+            <p className="settings-hint">{searchSensitivityHint(searchMinPct)}</p>
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleResetSearchDefault}
+              >
+                Reset to 70%
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleSaveSettings}
+                disabled={settingsSaving}
+              >
+                {settingsSaving ? 'Saving…' : 'Save search settings'}
+              </button>
+              {settingsSaved && <span className="settings-saved">Saved</span>}
+            </div>
           </div>
 
           <div className="account-card">

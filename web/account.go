@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -138,4 +139,51 @@ func (h *AccountHandler) DeleteAccount(c *fiber.Ctx) error {
 	c.Cookie(cookie)
 
 	return c.JSON(fiber.Map{"message": "account deleted successfully"})
+}
+
+// UpdateSettings saves user preferences (search sensitivity, etc.).
+func (h *AccountHandler) UpdateSettings(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var input struct {
+		SearchMinSimilarity *float32 `json:"search_min_similarity"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if input.SearchMinSimilarity == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "search_min_similarity is required"})
+	}
+
+	value := *input.SearchMinSimilarity
+	if value < db.MinSearchMinSimilarity || value > db.MaxSearchMinSimilarity {
+		return c.Status(400).JSON(fiber.Map{
+			"error": fmt.Sprintf("search_min_similarity must be between %.0f and %.0f",
+				db.MinSearchMinSimilarity, db.MaxSearchMinSimilarity),
+		})
+	}
+
+	res, err := h.gateway.Send(actor.TypeGetUser, actor.GetUserPayload{ID: userID}, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load user"})
+	}
+	user, ok := res.(db.User)
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	user.SearchMinSimilarity = value
+	user.UpdatedAt = time.Now().Unix()
+
+	if _, err := h.gateway.Send(actor.TypeUpsertUser, actor.UpsertUserPayload{User: user}, 5*time.Second); err != nil {
+		log.Printf("[AccountHandler] UpdateSettings UpsertUser failed: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "failed to save settings"})
+	}
+
+	return c.JSON(fiber.Map{
+		"search_min_similarity": value,
+	})
 }

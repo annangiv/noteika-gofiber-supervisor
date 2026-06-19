@@ -104,13 +104,15 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 		return c.Status(500).SendString("Encryption failed")
 	}
 
-	// Check if user already exists
+	// Check if user already exists (preserve id, created_at, and settings on re-login)
 	var userID string
+	var existingUser db.User
 	hashPayload := actor.GetUserByEmailHashPayload{Hash: emailHash}
 	existingRes, err := h.gateway.Send(actor.TypeGetUserByEmailHash, hashPayload, 5*time.Second)
 	if err == nil {
-		if existingUser, ok := existingRes.(db.User); ok {
-			userID = existingUser.ID
+		if u, ok := existingRes.(db.User); ok {
+			existingUser = u
+			userID = u.ID
 		}
 	}
 
@@ -119,16 +121,25 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	}
 
 	now := time.Now().Unix()
+	createdAt := now
+	if existingUser.ID != "" {
+		createdAt = existingUser.CreatedAt
+	}
+
 	user := db.User{
-		ID:             userID,
-		EmailHash:      emailHash,
-		EncryptedEmail: encryptedEmail,
-		OAuthProvider:  userProfile.Provider,
-		OAuthID:        userProfile.ProviderID,
-		FullName:       userProfile.Name,
-		Tier:           "free",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                  userID,
+		EmailHash:           emailHash,
+		EncryptedEmail:      encryptedEmail,
+		OAuthProvider:       userProfile.Provider,
+		OAuthID:             userProfile.ProviderID,
+		FullName:            userProfile.Name,
+		Tier:                "free",
+		SearchMinSimilarity: existingUser.SearchMinSimilarity,
+		CreatedAt:           createdAt,
+		UpdatedAt:           now,
+	}
+	if existingUser.Tier != "" {
+		user.Tier = existingUser.Tier
 	}
 
 	// Upsert User
@@ -213,11 +224,12 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"id":             user.ID,
-		"email":          decryptedEmail,
-		"oauth_provider": user.OAuthProvider,
-		"full_name":      user.FullName,
-		"tier":           user.Tier,
-		"created_at":     user.CreatedAt,
+		"id":                    user.ID,
+		"email":                 decryptedEmail,
+		"oauth_provider":        user.OAuthProvider,
+		"full_name":             user.FullName,
+		"tier":                  user.Tier,
+		"created_at":            user.CreatedAt,
+		"search_min_similarity": db.EffectiveSearchMinSimilarity(user.SearchMinSimilarity),
 	})
 }
