@@ -36,10 +36,11 @@ const (
 	TypeDeleteSession       = "DeleteSession"
 	TypeSaveOauthState      = "SaveOauthState"
 	TypeTakeOauthState      = "TakeOauthState"
-	TypeSaveNote            = "SaveNote"
-	TypeGetNote             = "GetNote"
-	TypeListNotes           = "ListNotes"
-	TypeDeleteNote          = "DeleteNote"
+	TypeSaveCapture         = "SaveCapture"
+	TypeGetCapture          = "GetCapture"
+	TypeListCaptures        = "ListCaptures"
+	TypeDeleteCapture       = "DeleteCapture"
+	TypeListProjects        = "ListProjects"
 	TypeDebugCrash          = "DebugCrash"
 )
 
@@ -81,20 +82,25 @@ type TakeOauthStatePayload struct {
 	State string
 }
 
-type SaveNotePayload struct {
-	Note db.Note
+type SaveCapturePayload struct {
+	Capture db.Capture
 }
 
-type GetNotePayload struct {
+type GetCapturePayload struct {
 	UserID string
 	ID     string
 }
 
-type ListNotesPayload struct {
-	UserID string
+type ListCapturesPayload struct {
+	UserID        string
+	ProjectFilter string
 }
 
-type DeleteNotePayload struct {
+type DeleteCapturePayload struct {
 	UserID string
 	ID     string
+}
+
+type ListProjectsPayload struct {
+	UserID string
 }

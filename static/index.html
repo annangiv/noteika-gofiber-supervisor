@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>keller — Go Fiber OTP Supervisor</title>
+    <title>noteika — Notes that resurface before you duplicate yourself</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- TensorFlow.js and Universal Sentence Encoder -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder"></script>
 </head>
 <body>
     <div class="stars"></div>
@@ -23,17 +26,17 @@
         <!-- Loader Screen -->
         <div id="app-loader" class="loader-container">
             <div class="spinner"></div>
-            <p>Initializing supervised node...</p>
+            <p>Bootstrapping supervised node...</p>
         </div>
 
         <!-- AUTH SCREEN -->
         <section id="auth-screen" class="glass-card fade-in hidden">
             <div class="auth-header">
                 <div class="logo">
-                    <i class="fa-solid fa-shield-halved logo-icon"></i>
-                    <h1>keller</h1>
+                    <i class="fa-solid fa-brain logo-icon"></i>
+                    <h1>noteika</h1>
                 </div>
-                <p class="subtitle">Erlang OTP Supervised Actor Web Application</p>
+                <p class="subtitle">Notes that resurface before you duplicate yourself</p>
             </div>
             
             <div class="auth-body">
@@ -51,7 +54,7 @@
                 </div>
             </div>
             <div class="auth-footer">
-                <p>BadgerDB Embedded Key-Value Storage</p>
+                <p>BadgerDB Vector Storage + Supervisor</p>
             </div>
         </section>
 
@@ -61,10 +64,12 @@
             <nav class="navbar glass-card">
                 <div class="nav-left">
                     <div class="logo logo-sm">
-                        <i class="fa-solid fa-shield-halved logo-icon"></i>
-                        <h1>keller</h1>
+                        <i class="fa-solid fa-brain logo-icon"></i>
+                        <h1>noteika</h1>
                     </div>
-                    <span class="badge">Supervised Node</span>
+                    <span class="badge" id="model-status-badge">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Loading USE Model...
+                    </span>
                 </div>
                 <div class="nav-right" id="user-profile">
                     <div class="user-info">
@@ -77,24 +82,13 @@
 
             <!-- Main Layout -->
             <div class="dashboard-grid">
-                <!-- Notes Column -->
-                <div class="notes-column">
-                    <!-- Create Note Form -->
-                    <div class="glass-card note-form-container">
-                        <h2><i class="fa-solid fa-pen-nib"></i> New Note</h2>
-                        <form id="note-form">
-                            <div class="form-group">
-                                <label for="note-title">Title</label>
-                                <input type="text" id="note-title" placeholder="A brief reminder..." required>
-                            </div>
-                            <div class="form-group">
-                                <label for="note-content">Content</label>
-                                <textarea id="note-content" rows="5" placeholder="Write something remarkable..." required></textarea>
-                            </div>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fa-solid fa-plus"></i> Save Note
-                            </button>
-                        </form>
+                <!-- Sidebar (Projects & Filters) -->
+                <aside class="sidebar-column">
+                    <div class="glass-card sidebar-card">
+                        <h2><i class="fa-solid fa-folder-open"></i> Projects</h2>
+                        <ul class="project-list" id="project-list">
+                            <!-- Dynamic projects will render here -->
+                        </ul>
                     </div>
 
                     <!-- Telemetry Stats Panel -->
@@ -106,7 +100,7 @@
                                 <span class="stat-value text-glow-green" id="telemetry-status">Running</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">Actor Restart Count</span>
+                                <span class="stat-label">Actor Restarts</span>
                                 <span class="stat-value text-glow-purple" id="telemetry-restarts">0</span>
                             </div>
                         </div>
@@ -115,33 +109,65 @@
                             <span class="stat-value text-mono text-glow-blue" id="telemetry-mailbox">0x000000000</span>
                         </div>
                         <button id="btn-crash-actor" class="btn btn-danger">
-                            <i class="fa-solid fa-skull-crossbones"></i> Trigger Actor Crash (Panic)
+                            <i class="fa-solid fa-skull-crossbones"></i> Trigger Actor Crash
                         </button>
                     </div>
-                </div>
+                </aside>
 
-                <!-- List/Logs Column -->
-                <div class="list-column">
-                    <!-- Notes Grid -->
-                    <div class="notes-section">
-                        <h2><i class="fa-solid fa-clipboard-list"></i> Saved Notes</h2>
-                        <div id="notes-grid" class="notes-grid-layout">
-                            <!-- Note cards will be dynamically loaded here -->
-                            <div class="no-notes-placeholder">
-                                <i class="fa-regular fa-folder-open"></i>
-                                <p>No notes found. Let's create one!</p>
+                <!-- Feed Column (Search, Input & Captures) -->
+                <div class="feed-column">
+                    <!-- Semantic Search Bar -->
+                    <div class="search-container">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="search-input" placeholder="Search captures by meaning (e.g. 'oauth redirect handling')..." disabled>
+                        <button id="btn-clear-search" class="btn-clear-search hidden"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+
+                    <!-- Capture Creator Form -->
+                    <div class="glass-card capture-form-container">
+                        <form id="capture-form">
+                            <div class="form-group no-margin">
+                                <textarea id="capture-body" rows="4" placeholder="Paste AI prompt, link, notes, Q&A, or code snippets here..." required></textarea>
                             </div>
+                            
+                            <div class="capture-form-footer">
+                                <div class="inline-inputs">
+                                    <div class="inline-input-group">
+                                        <i class="fa-solid fa-tag input-icon"></i>
+                                        <input type="text" id="capture-project" placeholder="Project (default: Inbox)" list="project-suggestions">
+                                        <datalist id="project-suggestions"></datalist>
+                                    </div>
+                                    <div class="inline-input-group">
+                                        <i class="fa-solid fa-link input-icon"></i>
+                                        <input type="url" id="capture-source" placeholder="Source URL (optional)">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary" id="btn-save" disabled>
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Capture
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Captures List Feed -->
+                    <div class="captures-section">
+                        <div class="section-header">
+                            <h2 id="feed-title"><i class="fa-solid fa-stream"></i> Inbox Feed</h2>
+                            <span class="captures-count" id="captures-count">0 items</span>
+                        </div>
+                        
+                        <div id="captures-feed" class="captures-feed-layout">
+                            <!-- Dynamic cards load here -->
                         </div>
                     </div>
 
-                    <!-- Logs Panel -->
+                    <!-- Terminal Logs Panel -->
                     <div class="glass-card logs-panel">
                         <div class="logs-header">
                             <h2><i class="fa-solid fa-terminal"></i> Supervisor Event Log</h2>
                             <button id="btn-clear-logs" class="btn-icon"><i class="fa-solid fa-trash-can"></i></button>
                         </div>
                         <div id="log-terminal" class="terminal-body">
-                            <!-- Logs will stream here -->
                             <div class="log-line system">[SYSTEM] Supervisor connected. Monitoring actor 'VaultActor'.</div>
                         </div>
                     </div>
@@ -150,9 +176,55 @@
         </section>
     </main>
 
+    <!-- CAPTURE DETAIL / EDIT MODAL -->
+    <div id="edit-modal" class="modal-overlay hidden">
+        <div class="glass-card modal-card fade-in">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-pen-to-square"></i> Edit Capture</h2>
+                <button id="btn-close-modal" class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <input type="hidden" id="edit-id">
+                    <div class="form-group">
+                        <label for="edit-title">Title</label>
+                        <input type="text" id="edit-title" placeholder="Auto-generated title (leave blank to keep auto-generation)">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-body">Content Body</label>
+                        <textarea id="edit-body" rows="8" required></textarea>
+                    </div>
+                    <div class="modal-inline-row">
+                        <div class="form-group">
+                            <label for="edit-project">Project</label>
+                            <input type="text" id="edit-project" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-source">Source URL</label>
+                            <input type="url" id="edit-source" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" id="btn-delete-capture" class="btn btn-danger-action">
+                            <i class="fa-solid fa-trash-can"></i> Delete
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="btn-modal-save">
+                            <i class="fa-solid fa-save"></i> Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // SPA state and handling
+        // Global State
         let currentUser = null;
+        let tfModel = null;
+        let projects = ["Inbox"];
+        let selectedProject = "Inbox";
+        let isSearching = false;
+        let searchTimeout = null;
         let pollingInterval = null;
 
         const el = {
@@ -161,17 +233,43 @@
             dashboardScreen: document.getElementById('dashboard-screen'),
             userName: document.getElementById('user-name'),
             userEmail: document.getElementById('user-email'),
-            noteForm: document.getElementById('note-form'),
-            noteTitle: document.getElementById('note-title'),
-            noteContent: document.getElementById('note-content'),
-            notesGrid: document.getElementById('notes-grid'),
+            
+            captureForm: document.getElementById('capture-form'),
+            captureBody: document.getElementById('capture-body'),
+            captureProject: document.getElementById('capture-project'),
+            captureSource: document.getElementById('capture-source'),
+            btnSave: document.getElementById('btn-save'),
+            projectSuggestions: document.getElementById('project-suggestions'),
+            
+            searchInput: document.getElementById('search-input'),
+            btnClearSearch: document.getElementById('btn-clear-search'),
+            
+            feedTitle: document.getElementById('feed-title'),
+            capturesCount: document.getElementById('captures-count'),
+            capturesFeed: document.getElementById('captures-feed'),
+            
+            projectList: document.getElementById('project-list'),
+            modelStatusBadge: document.getElementById('model-status-badge'),
+            
             telemetryStatus: document.getElementById('telemetry-status'),
             telemetryRestarts: document.getElementById('telemetry-restarts'),
             telemetryMailbox: document.getElementById('telemetry-mailbox'),
             btnCrashActor: document.getElementById('btn-crash-actor'),
             btnClearLogs: document.getElementById('btn-clear-logs'),
             logTerminal: document.getElementById('log-terminal'),
-            btnDevLogin: document.getElementById('btn-dev-login')
+            btnDevLogin: document.getElementById('btn-dev-login'),
+
+            // Modal elements
+            editModal: document.getElementById('edit-modal'),
+            editForm: document.getElementById('edit-form'),
+            editId: document.getElementById('edit-id'),
+            editTitle: document.getElementById('edit-title'),
+            editBody: document.getElementById('edit-body'),
+            editProject: document.getElementById('edit-project'),
+            editSource: document.getElementById('edit-source'),
+            btnCloseModal: document.getElementById('btn-close-modal'),
+            btnDeleteCapture: document.getElementById('btn-delete-capture'),
+            btnModalSave: document.getElementById('btn-modal-save')
         };
 
         // Custom logging utility
@@ -197,17 +295,92 @@
             toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
             toastContainer.appendChild(toast);
             
-            // Trigger animation
             setTimeout(() => toast.classList.add('show'), 10);
             
-            // Remove toast
             setTimeout(() => {
                 toast.classList.remove('show');
                 setTimeout(() => toast.remove(), 300);
             }, 4000);
         }
 
-        // Initialize SPA
+        // Helper to format timestamps
+        function formatRelativeTime(epoch) {
+            const now = Math.floor(Date.now() / 1000);
+            const diff = now - epoch;
+            if (diff < 5) return "just now";
+            if (diff < 60) return `${diff} seconds ago`;
+            const mins = Math.floor(diff / 60);
+            if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+            return new Date(epoch * 1000).toLocaleDateString();
+        }
+
+        // Load TensorFlow Universal Sentence Encoder model
+        async function loadEmbeddingModel() {
+            addLog("[Model] Initializing TensorFlow.js engine...", "info");
+            try {
+                // Wait for TF.js to be initialized
+                await tf.ready();
+                addLog("[Model] TF.js backend initialized. Loading USE model (~30MB)...", "info");
+                
+                tfModel = await use.load();
+                
+                addLog("[Model] Universal Sentence Encoder model loaded successfully!", "success");
+                el.modelStatusBadge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Semantic Search Ready`;
+                el.modelStatusBadge.className = "badge badge-success-glow";
+                
+                // Enable inputs
+                el.btnSave.disabled = false;
+                el.searchInput.disabled = false;
+                el.searchInput.placeholder = "Search captures by meaning (e.g. 'oauth redirect handling')...";
+            } catch (err) {
+                console.error("Failed to load USE model", err);
+                addLog("[Model] Error loading USE model. Falling back to keyword search.", "error");
+                el.modelStatusBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Mock Embedding Fallback`;
+                el.modelStatusBadge.className = "badge badge-warning-glow";
+                
+                // Fallback: still enable inputs
+                el.btnSave.disabled = false;
+                el.searchInput.disabled = false;
+                el.searchInput.placeholder = "Keyword-only search (Ollama/TF offline)...";
+            }
+        }
+
+        // Generate vector embedding client-side
+        async function computeEmbedding(text) {
+            if (!tfModel) {
+                // Return a mock vector of 512 floats based on text hashing if model is offline
+                addLog("[Model] USE offline, calculating fallback pseudo-vector...", "warning");
+                const vector = new Array(512).fill(0);
+                const words = text.toLowerCase().split(/\W+/);
+                words.forEach((word, idx) => {
+                    let hash = 0;
+                    for (let i = 0; i < word.length; i++) {
+                        hash = (hash << 5) - hash + word.charCodeAt(i);
+                        hash |= 0;
+                    }
+                    const pos = Math.abs(hash) % 512;
+                    vector[pos] += 1.0;
+                });
+                // L2 Normalize
+                let sumSq = vector.reduce((sum, v) => sum + v*v, 0);
+                if (sumSq > 0) {
+                    const norm = Math.sqrt(sumSq);
+                    for (let i=0; i<512; i++) vector[i] /= norm;
+                }
+                return vector;
+            }
+
+            // Real embedding generation
+            const embeddings = await tfModel.embed([text]);
+            const tensorArray = await embeddings.array();
+            // Free memory
+            embeddings.dispose();
+            return tensorArray[0];
+        }
+
+        // Initialize App Auth State
         async function checkAuth() {
             try {
                 const res = await fetch('/api/auth/me');
@@ -228,9 +401,7 @@
             el.dashboardScreen.classList.add('hidden');
             el.authScreen.classList.remove('hidden');
             
-            // Setup dev login with mock parameter
-            el.btnDevLogin.href = "/auth/login/github"; // Trigger github mock
-            
+            el.btnDevLogin.href = "/auth/login/github";
             if (pollingInterval) clearInterval(pollingInterval);
         }
 
@@ -244,108 +415,314 @@
 
             addLog(`Authenticated as ${currentUser.full_name} (${currentUser.email})`, 'success');
             
-            // Load notes and start telemetry polling
-            loadNotes();
+            // Load components
+            loadProjects();
+            loadCaptures();
             loadTelemetry();
+            
+            loadEmbeddingModel(); // Lazy load the 30MB model
+            
             if (pollingInterval) clearInterval(pollingInterval);
-            pollingInterval = setInterval(loadTelemetry, 1500); // Poll telemetry every 1.5s
+            pollingInterval = setInterval(loadTelemetry, 1500);
         }
 
-        // Notes REST CRUD operations
-        async function loadNotes() {
+        // Project autocomplete suggestions and sidebar lists
+        async function loadProjects() {
             try {
-                const res = await fetch('/api/notes');
+                const res = await fetch('/api/projects');
                 if (res.status === 200) {
-                    const notes = await res.json();
-                    renderNotes(notes);
-                } else if (res.status === 503) {
-                    showToast("Database actor is restarting, notes temporarily unavailable", "info");
-                    addLog("[API] ListNotes failed: Database actor is offline (restarting)", "warning");
+                    projects = await res.json();
+                    renderProjectList();
+                    renderProjectDatalist();
                 }
             } catch (err) {
-                console.error("Load notes failed", err);
+                console.error("Load projects list failed", err);
             }
         }
 
-        function renderNotes(notes) {
-            el.notesGrid.innerHTML = '';
+        function renderProjectList() {
+            el.projectList.innerHTML = '';
             
-            if (!notes || notes.length === 0) {
-                el.notesGrid.innerHTML = `
+            // Render "Inbox"
+            const inboxLi = document.createElement('li');
+            inboxLi.className = selectedProject === 'Inbox' ? 'active' : '';
+            inboxLi.innerHTML = `<i class="fa-solid fa-inbox"></i> <span>Inbox</span>`;
+            inboxLi.onclick = () => selectProject('Inbox');
+            el.projectList.appendChild(inboxLi);
+
+            // Render all other projects
+            projects.forEach(p => {
+                if (p === 'Inbox') return;
+                const li = document.createElement('li');
+                li.className = selectedProject === p ? 'active' : '';
+                li.innerHTML = `<i class="fa-solid fa-hashtag"></i> <span>${escapeHtml(p)}</span>`;
+                li.onclick = () => selectProject(p);
+                el.projectList.appendChild(li);
+            });
+        }
+
+        function renderProjectDatalist() {
+            el.projectSuggestions.innerHTML = '';
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                el.projectSuggestions.appendChild(opt);
+            });
+        }
+
+        function selectProject(proj) {
+            selectedProject = proj;
+            el.feedTitle.innerHTML = `<i class="fa-solid ${proj === 'Inbox' ? 'fa-inbox' : 'fa-stream'}"></i> ${escapeHtml(proj)} Feed`;
+            
+            // Clear search
+            el.searchInput.value = '';
+            el.btnClearSearch.classList.add('hidden');
+            isSearching = false;
+
+            renderProjectList();
+            loadCaptures();
+        }
+
+        // Captures REST CRUD operations
+        async function loadCaptures() {
+            if (isSearching) return; // Do not reload standard list while search is active
+
+            try {
+                const url = selectedProject ? `/api/captures?project=${encodeURIComponent(selectedProject)}` : '/api/captures';
+                const res = await fetch(url);
+                
+                if (res.status === 200) {
+                    const captures = await res.json();
+                    renderCaptures(captures);
+                } else if (res.status === 503) {
+                    showToast("Database actor is restarting, captures offline", "info");
+                }
+            } catch (err) {
+                console.error("Load captures failed", err);
+            }
+        }
+
+        function renderCaptures(items, isSearchResult = false) {
+            el.capturesFeed.innerHTML = '';
+            el.capturesCount.textContent = `${items.length} item${items.length !== 1 ? 's' : ''}`;
+
+            if (!items || items.length === 0) {
+                el.capturesFeed.innerHTML = `
                     <div class="no-notes-placeholder">
                         <i class="fa-regular fa-folder-open"></i>
-                        <p>No notes found. Let's create one!</p>
+                        <p>${isSearchResult ? "No matching semantic results found." : "No captures found in this project. Paste something above!"}</p>
                     </div>`;
                 return;
             }
 
-            // Sort by CreatedAt descending
-            notes.sort((a, b) => b.created_at - a.created_at);
+            items.forEach(item => {
+                // If it is search result, item is { capture: Capture, similarity: float32 }
+                const cap = isSearchResult ? item.capture : item;
+                const score = isSearchResult ? item.similarity : null;
 
-            notes.forEach(note => {
                 const card = document.createElement('div');
-                card.className = 'glass-card note-card fade-in';
+                card.className = 'glass-card capture-card fade-in';
                 
-                const timeStr = new Date(note.created_at * 1000).toLocaleString();
+                // Highlight exact/high semantic match
+                if (score !== null && score > 0.85) {
+                    card.classList.add('high-match');
+                }
+
+                // Setup edit trigger
+                card.onclick = (e) => {
+                    // Prevent edit modal if delete or URL icons are clicked
+                    if (e.target.closest('.btn-delete') || e.target.closest('.link-out')) return;
+                    openEditModal(cap);
+                };
+
+                const timeStr = formatRelativeTime(cap.created_at);
+                const projectBadge = `<span class="card-badge project-badge">${escapeHtml(cap.Project)}</span>`;
+                
+                let sourceBadge = '';
+                if (cap.source_url) {
+                    sourceBadge = `<a href="${escapeHtml(cap.source_url)}" target="_blank" class="link-out" title="Visit Source URL"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>`;
+                }
+
+                let scoreBadge = '';
+                if (score !== null) {
+                    const pct = Math.round(score * 100);
+                    const isHigh = score > 0.85;
+                    scoreBadge = `<span class="card-badge score-badge ${isHigh ? 'glow-green' : ''}"><i class="fa-solid fa-brain"></i> Match: ${pct}%</span>`;
+                }
+
+                // Truncate body for snippet view
+                let bodySnippet = escapeHtml(cap.body);
+                if (bodySnippet.length > 250) {
+                    bodySnippet = bodySnippet.substring(0, 250) + "...";
+                }
 
                 card.innerHTML = `
-                    <div class="note-card-header">
-                        <h3>${escapeHtml(note.title)}</h3>
-                        <button class="btn-delete" onclick="deleteNote('${note.id}')"><i class="fa-regular fa-trash-can"></i></button>
+                    <div class="capture-card-header">
+                        <div class="card-title-area">
+                            <h3>${escapeHtml(cap.title)}</h3>
+                            <div class="card-badges">
+                                ${projectBadge}
+                                ${scoreBadge}
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            ${sourceBadge}
+                            <button class="btn-delete" onclick="deleteCapture('${cap.id}')"><i class="fa-regular fa-trash-can"></i></button>
+                        </div>
                     </div>
-                    <p class="note-card-content">${escapeHtml(note.content).replace(/\n/g, '<br>')}</p>
-                    <div class="note-card-footer">
+                    <p class="capture-card-content">${bodySnippet.replace(/\n/g, '<br>')}</p>
+                    <div class="capture-card-footer">
                         <span><i class="fa-regular fa-clock"></i> ${timeStr}</span>
                     </div>`;
-                el.notesGrid.appendChild(card);
+                el.capturesFeed.appendChild(card);
             });
         }
 
-        async function createNote(title, content) {
+        // Create Capture
+        el.captureForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const body = el.captureBody.value;
+            const projectInput = el.captureProject.value.trim();
+            const project = projectInput === "" ? "Inbox" : projectInput;
+            const source_url = el.captureSource.value.trim();
+
+            el.btnSave.disabled = true;
+            el.btnSave.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Embedding...`;
+            addLog(`[Model] Encoding capture text for semantic indices...`, 'info');
+
             try {
-                addLog(`[API] Creating note: "${title}"`, 'info');
-                const res = await fetch('/api/notes', {
+                // Generate vector embedding client-side
+                const vector = await computeEmbedding(body);
+                addLog(`[Model] Created 512-dimension USE vector embedding`, 'success');
+
+                addLog(`[API] Dispatching save capture to VaultActor`, 'info');
+                const res = await fetch('/api/captures', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content })
+                    body: JSON.stringify({
+                        body,
+                        project,
+                        source_url,
+                        embedding: vector
+                    })
                 });
 
                 if (res.status === 201) {
-                    showToast("Note created successfully!");
-                    addLog(`[API] Note saved: "${title}"`, 'success');
-                    el.noteForm.reset();
-                    loadNotes();
+                    showToast("Snippet captured successfully!");
+                    addLog("[API] Capture saved", "success");
+                    
+                    el.captureBody.value = '';
+                    el.captureSource.value = '';
+                    
+                    // Reload projects list and captures
+                    await loadProjects();
+                    selectProject(project);
                 } else if (res.status === 503) {
-                    showToast("Failed: Database actor is currently offline/restarting", "error");
-                    addLog("[API] SaveNote aborted: database actor offline", "error");
+                    showToast("Failed: Database actor is currently restarting", "error");
                 } else {
                     const data = await res.json();
-                    showToast(data.error || "Failed to create note", "error");
+                    showToast(data.error || "Failed to save capture", "error");
                 }
             } catch (err) {
+                console.error("Save capture failed", err);
                 showToast("Request failed", "error");
+            } finally {
+                el.btnSave.disabled = false;
+                el.btnSave.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Capture`;
+            }
+        });
+
+        // Delete Capture
+        async function deleteCapture(id) {
+            try {
+                addLog(`[API] Deleting capture: ${id}`, 'info');
+                const res = await fetch(`/api/captures/${id}`, { method: 'DELETE' });
+                
+                if (res.status === 200) {
+                    showToast("Capture deleted");
+                    addLog(`[API] Capture deleted: ${id}`, 'success');
+                    
+                    loadProjects();
+                    loadCaptures();
+                } else if (res.status === 503) {
+                    showToast("Failed: Database actor is currently restarting", "error");
+                } else {
+                    showToast("Failed to delete capture", "error");
+                }
+            } catch (err) {
+                console.error("Delete capture failed", err);
             }
         }
 
-        async function deleteNote(id) {
+        // Semantic Search Query execution
+        async function runSemanticSearch(query) {
+            if (!query || query.trim() === "") {
+                isSearching = false;
+                el.btnClearSearch.classList.add('hidden');
+                el.feedTitle.innerHTML = `<i class="fa-solid fa-inbox"></i> ${escapeHtml(selectedProject)} Feed`;
+                loadCaptures();
+                return;
+            }
+
+            isSearching = true;
+            el.btnClearSearch.classList.remove('hidden');
+            el.feedTitle.innerHTML = `<i class="fa-solid fa-brain"></i> Semantic Search Results`;
+            el.capturesFeed.innerHTML = `
+                <div class="loader-container" style="height: 120px;">
+                    <div class="spinner"></div>
+                    <p style="font-size: 13px;">Embedding search query...</p>
+                </div>`;
+
             try {
-                addLog(`[API] Deleting note: ${id}`, 'info');
-                const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+                // Generate embedding for query
+                const queryVector = await computeEmbedding(query);
                 
+                // POST query vector to search endpoint
+                const res = await fetch('/api/captures/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ embedding: queryVector })
+                });
+
                 if (res.status === 200) {
-                    showToast("Note deleted");
-                    addLog(`[API] Note deleted: ${id}`, 'success');
-                    loadNotes();
+                    const results = await res.json();
+                    
+                    // Render results ranked by cosine similarity
+                    renderCaptures(results, true);
+                    addLog(`[Search] Completed semantic lookup for query: "${query}"`, 'success');
                 } else if (res.status === 503) {
-                    showToast("Failed: Database actor is currently offline/restarting", "error");
-                    addLog("[API] DeleteNote aborted: database actor offline", "error");
-                } else {
-                    showToast("Failed to delete note", "error");
+                    showToast("Failed: database actor offline", "error");
                 }
             } catch (err) {
-                showToast("Request failed", "error");
+                console.error("Semantic search failed", err);
+                showToast("Search failed", "error");
             }
         }
+
+        // Debounce search input
+        el.searchInput.addEventListener('input', (e) => {
+            const query = e.target.value;
+            if (query.trim() === "") {
+                el.btnClearSearch.classList.add('hidden');
+            } else {
+                el.btnClearSearch.classList.remove('hidden');
+            }
+
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                runSemanticSearch(query);
+            }, 500); // 500ms debounce
+        });
+
+        // Clear Search
+        el.btnClearSearch.addEventListener('click', () => {
+            el.searchInput.value = '';
+            el.btnClearSearch.classList.add('hidden');
+            isSearching = false;
+            el.feedTitle.innerHTML = `<i class="fa-solid ${selectedProject === 'Inbox' ? 'fa-inbox' : 'fa-stream'}"></i> ${escapeHtml(selectedProject)} Feed`;
+            loadCaptures();
+        });
 
         // Telemetry stats polling
         let lastMailboxAddr = null;
@@ -357,12 +734,12 @@
                 if (res.status === 200) {
                     const stats = await res.json();
 
-                    // Check for changes to indicate restarts
                     if (lastMailboxAddr && lastMailboxAddr !== stats.mailbox_addr) {
                         addLog(`[Supervisor] Mailbox channel changed from ${lastMailboxAddr} to ${stats.mailbox_addr}`, 'system');
                         addLog(`[Supervisor] Actor fully recovered and back online`, 'success');
                         showToast("VaultActor restarted and recovered!", "success");
-                        loadNotes(); // Reload notes since DB is back online
+                        loadProjects();
+                        loadCaptures();
                     }
 
                     if (stats.restarts_count > lastRestartsCount) {
@@ -372,10 +749,8 @@
                     lastMailboxAddr = stats.mailbox_addr;
                     lastRestartsCount = stats.restarts_count;
 
-                    // Update UI
                     el.telemetryStatus.textContent = stats.status.toUpperCase();
                     el.telemetryStatus.className = stats.status === 'running' ? 'stat-value text-glow-green' : 'stat-value text-glow-red';
-                    
                     el.telemetryRestarts.textContent = stats.restarts_count;
                     el.telemetryMailbox.textContent = stats.mailbox_addr;
                 }
@@ -396,34 +771,104 @@
                 showToast("Panic triggered in VaultActor!", "info");
                 addLog(`[VaultActor] CRITICAL: Panicked: ${data.error || "actor panic"}`, 'error');
                 addLog(`[Supervisor] Intercepted panic. Triggering crash restart sequence...`, 'system');
-
             } catch (err) {
-                // If it crashes, request might fail, which is expected
                 addLog("[Supervisor] Connection interrupted during crash", 'warning');
             }
 
-            // Re-enable button after short wait
             setTimeout(() => {
                 el.btnCrashActor.disabled = false;
             }, 2000);
         });
 
-        // Submit form
-        el.noteForm.addEventListener('submit', (e) => {
+        // Edit Modal Handlers
+        function openEditModal(capture) {
+            el.editId.value = capture.id;
+            el.editTitle.value = capture.title;
+            el.editBody.value = capture.body;
+            el.editProject.value = capture.project;
+            el.editSource.value = capture.source_url || '';
+            
+            el.editModal.classList.remove('hidden');
+            addLog(`[UI] Opened editor for capture: ${capture.id}`, 'info');
+        }
+
+        el.btnCloseModal.onclick = () => {
+            el.editModal.classList.add('hidden');
+        };
+
+        // Close modal when clicking outside card
+        el.editModal.onclick = (e) => {
+            if (e.target === el.editModal) {
+                el.editModal.classList.add('hidden');
+            }
+        };
+
+        // Handle edit form submit
+        el.editForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const title = el.noteTitle.value.trim();
-            const content = el.noteContent.value.trim();
-            createNote(title, content);
+            
+            const id = el.editId.value;
+            const title = el.editTitle.value.trim();
+            const body = el.editBody.value;
+            const project = el.editProject.value.trim() || "Inbox";
+            const source_url = el.editSource.value.trim();
+
+            el.btnModalSave.disabled = true;
+            el.btnModalSave.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+
+            try {
+                addLog(`[Model] Regenerating embedding vector for edits...`, 'info');
+                const vector = await computeEmbedding(body);
+
+                addLog(`[API] Dispatching update capture to VaultActor`, 'info');
+                const res = await fetch(`/api/captures/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        body,
+                        project,
+                        source_url,
+                        embedding: vector
+                    })
+                });
+
+                if (res.status === 200) {
+                    showToast("Changes saved successfully!");
+                    addLog(`[API] Capture updated successfully`, 'success');
+                    el.editModal.classList.add('hidden');
+                    
+                    loadProjects();
+                    loadCaptures();
+                } else {
+                    const errData = await res.json();
+                    showToast(errData.error || "Failed to update capture", "error");
+                }
+            } catch (err) {
+                console.error("Edit capture failed", err);
+                showToast("Request failed", "error");
+            } finally {
+                el.btnModalSave.disabled = false;
+                el.btnModalSave.innerHTML = `<i class="fa-solid fa-save"></i> Save Changes`;
+            }
         });
 
-        // Clear terminal
+        // Delete inside modal
+        el.btnDeleteCapture.onclick = async () => {
+            const id = el.editId.value;
+            if (confirm("Are you sure you want to delete this capture permanently?")) {
+                el.editModal.classList.add('hidden');
+                await deleteCapture(id);
+            }
+        };
+
         el.btnClearLogs.addEventListener('click', () => {
             el.logTerminal.innerHTML = '';
             addLog('Logs cleared', 'info');
         });
 
-        // HTML Escaping
         function escapeHtml(text) {
+            if (!text) return "";
             const map = {
                 '&': '&amp;',
                 '<': '&lt;',
@@ -434,7 +879,6 @@
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
-        // Start
         checkAuth();
     </script>
 </body>

@@ -98,26 +98,32 @@ func (a *VaultActor) handleMessage(msg Message) {
 		resp.Data = provider
 		resp.Err = err
 
-	case TypeSaveNote:
-		payload := msg.Payload.(SaveNotePayload)
-		err := a.repo.SaveNote(payload.Note)
+	case TypeSaveCapture:
+		payload := msg.Payload.(SaveCapturePayload)
+		err := a.repo.SaveCapture(payload.Capture)
 		resp.Err = err
 
-	case TypeGetNote:
-		payload := msg.Payload.(GetNotePayload)
-		note, err := a.repo.GetNote(payload.UserID, payload.ID)
-		resp.Data = note
+	case TypeGetCapture:
+		payload := msg.Payload.(GetCapturePayload)
+		capture, err := a.repo.GetCapture(payload.UserID, payload.ID)
+		resp.Data = capture
 		resp.Err = err
 
-	case TypeListNotes:
-		payload := msg.Payload.(ListNotesPayload)
-		notes, err := a.repo.ListNotes(payload.UserID)
-		resp.Data = notes
+	case TypeListCaptures:
+		payload := msg.Payload.(ListCapturesPayload)
+		captures, err := a.repo.ListCaptures(payload.UserID, payload.ProjectFilter)
+		resp.Data = captures
 		resp.Err = err
 
-	case TypeDeleteNote:
-		payload := msg.Payload.(DeleteNotePayload)
-		err := a.repo.DeleteNote(payload.UserID, payload.ID)
+	case TypeDeleteCapture:
+		payload := msg.Payload.(DeleteCapturePayload)
+		err := a.repo.DeleteCapture(payload.UserID, payload.ID)
+		resp.Err = err
+
+	case TypeListProjects:
+		payload := msg.Payload.(ListProjectsPayload)
+		projects, err := a.repo.ListProjects(payload.UserID)
+		resp.Data = projects
 		resp.Err = err
 
 	default:

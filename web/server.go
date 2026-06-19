@@ -51,7 +51,7 @@ func (s *Server) Start(port string) error {
 
 	// Setup handlers
 	authHandler := NewAuthHandler(s.gateway)
-	notesHandler := NewNotesHandler(s.gateway)
+	capturesHandler := NewCapturesHandler(s.gateway)
 	debugHandler := NewDebugHandler(s.supervisor, s.registry, s.gateway)
 
 	// Static assets route
@@ -199,10 +199,14 @@ func (s *Server) Start(port string) error {
 	// Current user endpoint
 	api.Get("/auth/me", authHandler.Me)
 
-	// Notes CRUD
-	api.Get("/notes", notesHandler.List)
-	api.Post("/notes", notesHandler.Create)
-	api.Delete("/notes/:id", notesHandler.Delete)
+	// Captures CRUD & Search API
+	api.Get("/captures", capturesHandler.List)
+	api.Post("/captures", capturesHandler.Create)
+	api.Get("/captures/:id", capturesHandler.Get)
+	api.Patch("/captures/:id", capturesHandler.Update)
+	api.Delete("/captures/:id", capturesHandler.Delete)
+	api.Get("/projects", capturesHandler.ListProjects)
+	api.Post("/captures/search", capturesHandler.Search)
 
 	// Debug & Telemetry
 	api.Post("/debug/crash", debugHandler.Crash)

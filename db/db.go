@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,12 +36,16 @@ type Session struct {
 	ExpiresAt int64  `json:"expires_at"`
 }
 
-type Note struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	CreatedAt int64  `json:"created_at"`
+type Capture struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Project   string    `json:"project"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	SourceURL string    `json:"source_url"`
+	Embedding []float32 `json:"embedding,omitempty"`
+	CreatedAt int64     `json:"created_at"`
+	UpdatedAt int64     `json:"updated_at"`
 }
 
 type BadgerRepo struct {
@@ -309,26 +314,26 @@ func (r *BadgerRepo) TakeOauthState(state string) (string, error) {
 }
 
 // ==========================================
-// NOTES REPOSITORY OPERATIONS
+// CAPTURES REPOSITORY OPERATIONS
 // ==========================================
 
-func (r *BadgerRepo) SaveNote(note Note) error {
+func (r *BadgerRepo) SaveCapture(capture Capture) error {
 	return r.db.Update(func(txn *badger.Txn) error {
-		noteBytes, err := json.Marshal(note)
+		captureBytes, err := json.Marshal(capture)
 		if err != nil {
 			return err
 		}
 
-		noteKey := []byte(fmt.Sprintf("note:%s:%s", note.UserID, note.ID))
-		return txn.Set(noteKey, noteBytes)
+		captureKey := []byte(fmt.Sprintf("capture:%s:%s", capture.UserID, capture.ID))
+		return txn.Set(captureKey, captureBytes)
 	})
 }
 
-func (r *BadgerRepo) GetNote(userID string, id string) (Note, error) {
-	var note Note
+func (r *BadgerRepo) GetCapture(userID string, id string) (Capture, error) {
+	var capture Capture
 	err := r.db.View(func(txn *badger.Txn) error {
-		noteKey := []byte(fmt.Sprintf("note:%s:%s", userID, id))
-		item, err := txn.Get(noteKey)
+		captureKey := []byte(fmt.Sprintf("capture:%s:%s", userID, id))
+		item, err := txn.Get(captureKey)
 		if err != nil {
 			if err == badger.ErrKeyNotFound {
 				return ErrNotFound
@@ -337,16 +342,16 @@ func (r *BadgerRepo) GetNote(userID string, id string) (Note, error) {
 		}
 
 		return item.Value(func(val []byte) error {
-			return json.Unmarshal(val, &note)
+			return json.Unmarshal(val, &capture)
 		})
 	})
-	return note, err
+	return capture, err
 }
 
-func (r *BadgerRepo) ListNotes(userID string) ([]Note, error) {
-	var notes []Note
+func (r *BadgerRepo) ListCaptures(userID string, projectFilter string) ([]Capture, error) {
+	var captures []Capture
 	err := r.db.View(func(txn *badger.Txn) error {
-		prefix := []byte(fmt.Sprintf("note:%s:", userID))
+		prefix := []byte(fmt.Sprintf("capture:%s:", userID))
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
 
@@ -356,11 +361,17 @@ func (r *BadgerRepo) ListNotes(userID string) ([]Note, error) {
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			err := item.Value(func(val []byte) error {
-				var note Note
-				if err := json.Unmarshal(val, &note); err != nil {
+				var capture Capture
+				if err := json.Unmarshal(val, &capture); err != nil {
 					return err
 				}
-				notes = append(notes, note)
+				
+				// Filter by project if parameter is specified
+				if projectFilter != "" && !strings.EqualFold(capture.Project, projectFilter) {
+					return nil
+				}
+
+				captures = append(captures, capture)
 				return nil
 			})
 			if err != nil {
@@ -369,16 +380,58 @@ func (r *BadgerRepo) ListNotes(userID string) ([]Note, error) {
 		}
 		return nil
 	})
-	return notes, err
+	return captures, err
 }
 
-func (r *BadgerRepo) DeleteNote(userID string, noteID string) error {
+func (r *BadgerRepo) DeleteCapture(userID string, id string) error {
 	return r.db.Update(func(txn *badger.Txn) error {
-		noteKey := []byte(fmt.Sprintf("note:%s:%s", userID, noteID))
-		err := txn.Delete(noteKey)
+		captureKey := []byte(fmt.Sprintf("capture:%s:%s", userID, id))
+		err := txn.Delete(captureKey)
 		if err == badger.ErrKeyNotFound {
 			return ErrNotFound
 		}
 		return err
 	})
+}
+
+func (r *BadgerRepo) ListProjects(userID string) ([]string, error) {
+	projectsMap := make(map[string]bool)
+	projectsMap["Inbox"] = true // Always ensure Inbox exists
+
+	err := r.db.View(func(txn *badger.Txn) error {
+		prefix := []byte(fmt.Sprintf("capture:%s:", userID))
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				var capture Capture
+				if err := json.Unmarshal(val, &capture); err != nil {
+					return err
+				}
+				if capture.Project != "" {
+					projectsMap[capture.Project] = true
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var projects []string
+	for p := range projectsMap {
+		projects = append(projects, p)
+	}
+	sort.Strings(projects)
+	return projects, nil
 }
