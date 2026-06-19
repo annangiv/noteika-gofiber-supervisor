@@ -45,6 +45,7 @@ type Capture struct {
 	Body      string    `json:"body"`
 	SourceURL string    `json:"source_url"`
 	Type      string    `json:"type"` // "note", "link", "qa", "code"
+	Tags      []string  `json:"tags,omitempty"`
 	Embedding []float32 `json:"embedding,omitempty"`
 	CreatedAt int64     `json:"created_at"`
 	UpdatedAt int64     `json:"updated_at"`

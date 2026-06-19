@@ -22,14 +22,15 @@ func NewAccountHandler(gateway *actor.ActorGateway) *AccountHandler {
 }
 
 type exportCapture struct {
-	ID        string `json:"id"`
-	Project   string `json:"project"`
-	Title     string `json:"title"`
-	Body      string `json:"body"`
-	SourceURL string `json:"source_url"`
-	Type      string `json:"type"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID        string   `json:"id"`
+	Project   string   `json:"project"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body"`
+	SourceURL string   `json:"source_url"`
+	Type      string   `json:"type"`
+	Tags      []string `json:"tags,omitempty"`
+	CreatedAt int64    `json:"created_at"`
+	UpdatedAt int64    `json:"updated_at"`
 }
 
 type exportPayload struct {
@@ -88,6 +89,7 @@ func (h *AccountHandler) Export(c *fiber.Ctx) error {
 			Body:      cap.Body,
 			SourceURL: cap.SourceURL,
 			Type:      cap.Type,
+			Tags:      cap.Tags,
 			CreatedAt: cap.CreatedAt,
 			UpdatedAt: cap.UpdatedAt,
 		})

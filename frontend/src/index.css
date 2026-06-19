@@ -94,8 +94,8 @@ a:hover { text-decoration: underline; }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-secondary { background: var(--bg-white); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover { background: var(--bg-muted); }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #b91c1c; }
+.btn-danger { background: var(--danger); color: #fff !important; }
+.btn-danger:hover { background: #b91c1c; color: #fff !important; }
 .btn-sm { padding: 8px 14px; font-size: 13px; }
 .btn-lg { padding: 14px 24px; font-size: 15px; }
 .btn-block { width: 100%; }

@@ -3,6 +3,19 @@ import { Link, Navigate } from 'react-router-dom';
 import { SIMILARITY, LAST_SEARCH_KEY, searchCaptures, formatRelativeTime, DEFAULT_SEARCH_MIN } from '../lib/notesApi';
 import '../notes.css';
 
+function parseTagsInput(value) {
+  if (!value || !value.trim()) return [];
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function formatTagsInput(tags) {
+  if (!Array.isArray(tags) || tags.length === 0) return '';
+  return tags.join(', ');
+}
+
 export default function NotesPage() {
   // Authentication states
   const [user, setUser] = useState(null);
@@ -18,8 +31,10 @@ export default function NotesPage() {
 
   // Form states
   const [formBody, setFormBody] = useState('');
+  const [formTags, setFormTags] = useState('');
   const [formProject, setFormProject] = useState('');
   const [formSourceUrl, setFormSourceUrl] = useState('');
+  const [knownTags, setKnownTags] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Proactive duplicate resurfacing states
@@ -114,10 +129,23 @@ export default function NotesPage() {
     }
   };
 
+  const loadTags = async () => {
+    try {
+      const res = await fetch('/api/tags');
+      if (res.ok) {
+        const data = await res.json();
+        setKnownTags(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to load tags:', err);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       loadProjects();
       loadCaptures();
+      loadTags();
       setSearchQuery('');
       setIsSearching(false);
       setSearchResults([]);
@@ -290,6 +318,7 @@ export default function NotesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           body: formBody,
+          tags: parseTagsInput(formTags),
           project: formProject || selectedProject || 'Inbox',
           source_url: formSourceUrl,
         }),
@@ -298,12 +327,14 @@ export default function NotesPage() {
       if (res.ok) {
         showToast('Capture saved successfully');
         setFormBody('');
+        setFormTags('');
         setFormProject('');
         setFormSourceUrl('');
         setDuplicateWarning([]);
         setSaveDuplicateConfirm(null);
         loadCaptures();
         loadProjects();
+        loadTags();
       } else {
         showToast('Failed to save capture', 'error');
       }
@@ -348,6 +379,7 @@ export default function NotesPage() {
           body: editingCapture.body,
           project: editingCapture.project,
           source_url: editingCapture.source_url,
+          tags: editingCapture.tags || [],
         }),
       });
 
@@ -356,6 +388,7 @@ export default function NotesPage() {
         setEditingCapture(null);
         loadCaptures();
         loadProjects();
+        loadTags();
       } else {
         showToast('Failed to update capture', 'error');
       }
@@ -631,6 +664,22 @@ export default function NotesPage() {
                 <div className="capture-form-footer">
                   <div className="inline-inputs">
                     <div className="inline-input-group">
+                      <i className="fa-solid fa-hashtag input-icon"></i>
+                      <input
+                        type="text"
+                        id="capture-tags"
+                        value={formTags}
+                        onChange={(e) => setFormTags(e.target.value)}
+                        placeholder="Tags (comma-separated, or use #hashtags in text)"
+                        list="tag-suggestions"
+                      />
+                      <datalist id="tag-suggestions">
+                        {knownTags.map((t) => (
+                          <option key={t} value={t} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="inline-input-group">
                       <i className="fa-solid fa-tag input-icon"></i>
                       <input
                         type="text"
@@ -898,6 +947,11 @@ export default function NotesPage() {
                           <h3>{cap.title}</h3>
                           <div className="card-badges">
                             <span className="card-badge project-badge">{cap.project}</span>
+                            {(cap.tags || []).map((tag) => (
+                              <span key={tag} className="capture-tag">
+                                <i className="fa-solid fa-hashtag" />{tag}
+                              </span>
+                            ))}
                             {score !== null && (
                               <span className={`card-badge score-badge ${isHighMatch ? 'glow-green' : ''}`}>
                                 <i className="fa-solid fa-brain"></i> Match: {Math.round(score * 100)}%
@@ -1033,6 +1087,28 @@ export default function NotesPage() {
                     required
                   ></textarea>
                 </div>
+                <div className="form-group">
+                  <label htmlFor="edit-tags">Tags</label>
+                  <input
+                    type="text"
+                    id="edit-tags"
+                    value={formatTagsInput(editingCapture.tags)}
+                    onChange={(e) =>
+                      setEditingCapture({
+                        ...editingCapture,
+                        tags: parseTagsInput(e.target.value),
+                      })
+                    }
+                    placeholder="rustfs, s3, oauth"
+                    list="edit-tag-suggestions"
+                  />
+                  <datalist id="edit-tag-suggestions">
+                    {knownTags.map((t) => (
+                      <option key={t} value={t} />
+                    ))}
+                  </datalist>
+                  <p className="tags-hint">Smart tags are added automatically when you save. Use #hashtags in the body too.</p>
+                </div>
                 <div className="modal-inline-row">
                   <div className="form-group">
                     <label htmlFor="edit-project">Project</label>
@@ -1163,8 +1239,7 @@ export default function NotesPage() {
                 Cancel
               </button>
               <button
-                className="btn btn-danger-action"
-                style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                className="btn btn-danger-solid"
                 onClick={executeDelete}
               >
                 Confirm Delete
@@ -1200,8 +1275,7 @@ export default function NotesPage() {
                 Cancel
               </button>
               <button
-                className="btn btn-danger-action"
-                style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                className="btn btn-danger-solid"
                 onClick={handleEmptyTrash}
               >
                 Empty Trash Permanently

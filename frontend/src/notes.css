@@ -465,8 +465,40 @@ pre code { font-family: ui-monospace, monospace; }
   border: 1px solid #fecaca;
 }
 .btn-danger-action:hover { background: #fee2e2; }
+.btn-danger-solid {
+  background: var(--danger);
+  color: #fff !important;
+  border-color: var(--danger);
+}
+.btn-danger-solid:hover { background: #b91c1c; color: #fff !important; }
 
-#edit-title, #edit-project, #edit-source {
+.capture-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.capture-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid #c7d2fe;
+}
+.capture-tag i { font-size: 10px; opacity: 0.85; }
+
+.tags-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+#edit-title, #edit-project, #edit-source, #edit-tags, #capture-tags {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);

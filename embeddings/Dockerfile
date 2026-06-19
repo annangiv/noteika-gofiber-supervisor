@@ -3,7 +3,7 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install dependencies
-RUN pip install --no-cache-dir fastapi uvicorn fastembed
+RUN pip install --no-cache-dir fastapi uvicorn fastembed yake
 
 # Pre-download and cache the default embedding model in the image
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding()"

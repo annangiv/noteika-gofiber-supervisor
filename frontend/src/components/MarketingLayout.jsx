@@ -1,9 +1,8 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 
 export default function MarketingLayout({ children }) {
   const [user, setUser] = useState(null);
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -28,12 +27,7 @@ export default function MarketingLayout({ children }) {
               About
             </NavLink>
             {user ? (
-              <>
-                <NavLink to="/notes" className="nav-link">Notes</NavLink>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/notes')}>
-                  Open app
-                </button>
-              </>
+              <NavLink to="/notes" className="btn btn-primary btn-sm">My notes</NavLink>
             ) : (
               <Link to="/login" className="btn btn-primary btn-sm">Sign in</Link>
             )}

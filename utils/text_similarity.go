@@ -81,8 +81,8 @@ func TextSimilarity(a, b string) float32 {
 }
 
 // CombinedSimilarity returns the best of vector and text similarity.
-func CombinedSimilarity(query string, captureTitle, captureBody string, queryVector, captureVector []float32) float32 {
-	captureText := strings.TrimSpace(captureTitle + "\n" + captureBody)
+func CombinedSimilarity(query string, captureTitle, captureBody string, captureTags []string, queryVector, captureVector []float32) float32 {
+	captureText := CaptureSearchText(captureTitle, captureBody, captureTags)
 	textScore := TextSimilarity(query, captureText)
 
 	var vectorScore float32

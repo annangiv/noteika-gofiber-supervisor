@@ -141,6 +141,57 @@ func getEmbedding(text string) ([]float32, error) {
 	return result.Embedding, nil
 }
 
+func buildEmbeddingText(title, body string, tags []string) string {
+	return utils.CaptureSearchText(title, body, tags)
+}
+
+func getSuggestedTags(title, body string, existing []string) ([]string, error) {
+	payload := map[string]interface{}{
+		"title":         title,
+		"body":          body,
+		"existing_tags": existing,
+	}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tag suggestion payload: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post("http://embeddings:8000/suggest-tags", "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, fmt.Errorf("tag suggestion service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("tag suggestion service returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode tag suggestion response: %w", err)
+	}
+
+	return utils.NormalizeTags(result.Tags), nil
+}
+
+func resolveCaptureTags(title, body string, userTags []string) []string {
+	merged := utils.MergeTags(userTags, utils.ParseHashtags(body))
+	suggested, err := getSuggestedTags(title, body, merged)
+	if err != nil {
+		log.Printf("[CapturesHandler] Tag suggestion unavailable, using manual/hashtag tags only: %v", err)
+		return merged
+	}
+	return utils.MergeTags(merged, suggested)
+}
+
+func tagsEqual(a, b []string) bool {
+	return strings.Join(utils.NormalizeTags(a), ",") == strings.Join(utils.NormalizeTags(b), ",")
+}
+
 // Create a new capture (generating embedding vector on backend)
 func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
@@ -149,10 +200,11 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string `json:"title"`
-		Body      string `json:"body"`
-		Project   string `json:"project"`
-		SourceURL string `json:"source_url"`
+		Title     string   `json:"title"`
+		Body      string   `json:"body"`
+		Project   string   `json:"project"`
+		SourceURL string   `json:"source_url"`
+		Tags      []string `json:"tags"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -173,8 +225,10 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		project = "Inbox"
 	}
 
+	tags := resolveCaptureTags(title, input.Body, utils.NormalizeTags(input.Tags))
+
 	// Generate embedding vector on the backend (best-effort — save still succeeds without it)
-	embeddingText := title + "\n" + input.Body
+	embeddingText := buildEmbeddingText(title, input.Body, tags)
 	vector, err := getEmbedding(embeddingText)
 	if err != nil {
 		log.Printf("[CapturesHandler] Embedding unavailable on create, saving without vector: %v", err)
@@ -192,6 +246,7 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		Body:      input.Body,
 		SourceURL: input.SourceURL,
 		Type:      cType,
+		Tags:      tags,
 		Embedding: vector,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -285,10 +340,11 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Title     string `json:"title"`
-		Body      string `json:"body"`
-		Project   string `json:"project"`
-		SourceURL string `json:"source_url"`
+		Title     string    `json:"title"`
+		Body      string    `json:"body"`
+		Project   string    `json:"project"`
+		SourceURL string    `json:"source_url"`
+		Tags      *[]string `json:"tags"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -316,15 +372,26 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	
 	existing.SourceURL = input.SourceURL
 
+	tagsChanged := false
+	if input.Tags != nil {
+		normalizedTags := utils.NormalizeTags(*input.Tags)
+		tagsChanged = !tagsEqual(existing.Tags, normalizedTags)
+		existing.Tags = normalizedTags
+	}
+
 	if textChanged {
-		embeddingText := existing.Title + "\n" + existing.Body
+		existing.Tags = resolveCaptureTags(existing.Title, existing.Body, existing.Tags)
+		existing.Type = classifyContentType(existing.Body)
+	}
+
+	if textChanged || tagsChanged {
+		embeddingText := buildEmbeddingText(existing.Title, existing.Body, existing.Tags)
 		vector, err := getEmbedding(embeddingText)
 		if err != nil {
 			log.Printf("[CapturesHandler] Embedding unavailable on update, keeping prior vector: %v", err)
 		} else {
 			existing.Embedding = vector
 		}
-		existing.Type = classifyContentType(existing.Body)
 	}
 
 	existing.UpdatedAt = time.Now().Unix()
@@ -469,6 +536,42 @@ func (h *CapturesHandler) ListProjects(c *fiber.Ctx) error {
 	return c.JSON(projects)
 }
 
+// ListTags returns unique tags across the user's captures (for autocomplete).
+func (h *CapturesHandler) ListTags(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	payload := actor.ListCapturesPayload{UserID: userID}
+	res, err := h.gateway.Send(actor.TypeListCaptures, payload, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to retrieve tags"})
+	}
+
+	captures, ok := res.([]db.Capture)
+	if !ok || captures == nil {
+		return c.JSON([]string{})
+	}
+
+	seen := make(map[string]struct{})
+	for _, cap := range captures {
+		for _, tag := range cap.Tags {
+			n := utils.NormalizeTag(tag)
+			if n != "" {
+				seen[n] = struct{}{}
+			}
+		}
+	}
+
+	tags := make([]string, 0, len(seen))
+	for tag := range seen {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return c.JSON(tags)
+}
+
 type SearchResult struct {
 	Capture    db.Capture `json:"capture"`
 	Similarity float32    `json:"similarity"`
@@ -501,7 +604,7 @@ func rankCapturesBySimilarity(query string, queryVector []float32, captures []db
 			continue
 		}
 
-		similarity := utils.CombinedSimilarity(query, cap.Title, cap.Body, queryVector, cap.Embedding)
+		similarity := utils.CombinedSimilarity(query, cap.Title, cap.Body, cap.Tags, queryVector, cap.Embedding)
 		if similarity < minSim {
 			continue
 		}
