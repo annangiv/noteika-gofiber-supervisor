@@ -47,6 +47,7 @@ type Capture struct {
 	Embedding []float32 `json:"embedding,omitempty"`
 	CreatedAt int64     `json:"created_at"`
 	UpdatedAt int64     `json:"updated_at"`
+	DeletedAt int64     `json:"deleted_at"`
 }
 
 type BadgerRepo struct {
@@ -367,9 +368,19 @@ func (r *BadgerRepo) ListCaptures(userID string, projectFilter string) ([]Captur
 					return err
 				}
 				
-				// Filter by project if parameter is specified
-				if projectFilter != "" && !strings.EqualFold(capture.Project, projectFilter) {
-					return nil
+				// Soft-delete filtering:
+				if projectFilter == "Trash" {
+					if capture.DeletedAt == 0 {
+						return nil
+					}
+				} else {
+					if capture.DeletedAt > 0 {
+						return nil
+					}
+					// Filter by project if parameter is specified
+					if projectFilter != "" && !strings.EqualFold(capture.Project, projectFilter) {
+						return nil
+					}
 				}
 
 				captures = append(captures, capture)
@@ -414,7 +425,7 @@ func (r *BadgerRepo) ListProjects(userID string) ([]string, error) {
 				if err := json.Unmarshal(val, &capture); err != nil {
 					return err
 				}
-				if capture.Project != "" {
+				if capture.DeletedAt == 0 && capture.Project != "" {
 					projectsMap[capture.Project] = true
 				}
 				return nil

@@ -34,19 +34,30 @@ func generateAutoTitle(body string) string {
 		return "Untitled Capture"
 	}
 
-	// Take the first non-empty line
+	// Take the first non-empty line that is NOT a markdown code block fence (e.g. ``` or ```go)
 	lines := strings.Split(cleaned, "\n")
 	var firstLine string
 	for _, l := range lines {
 		lTrimmed := strings.TrimSpace(l)
-		if lTrimmed != "" {
+		if lTrimmed != "" && !strings.HasPrefix(lTrimmed, "```") {
 			firstLine = lTrimmed
 			break
 		}
 	}
 
 	if firstLine == "" {
-		firstLine = cleaned
+		// Fallback if all lines start with backticks
+		for _, l := range lines {
+			lTrimmed := strings.TrimSpace(l)
+			if lTrimmed != "" {
+				firstLine = strings.ReplaceAll(lTrimmed, "`", "")
+				break
+			}
+		}
+	}
+
+	if firstLine == "" {
+		firstLine = "Untitled Capture"
 	}
 
 	// Truncate to ~80 chars
@@ -321,7 +332,7 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	return c.JSON(existing)
 }
 
-// Delete a capture
+// Delete a capture (Soft Delete if active, Hard Delete if already deleted)
 func (h *CapturesHandler) Delete(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
@@ -330,16 +341,105 @@ func (h *CapturesHandler) Delete(c *fiber.Ctx) error {
 
 	captureID := c.Params("id")
 
-	payload := actor.DeleteCapturePayload{
-		UserID: userID,
-		ID:     captureID,
-	}
-	_, err := h.gateway.Send(actor.TypeDeleteCapture, payload, 5*time.Second)
+	// 1. Fetch the capture to check current state
+	fetchRes, err := h.gateway.Send(actor.TypeGetCapture, actor.GetCapturePayload{UserID: userID, ID: captureID}, 5*time.Second)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete capture"})
+		return c.Status(404).JSON(fiber.Map{"error": "Capture not found"})
+	}
+	capture, ok := fetchRes.(db.Capture)
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "Capture not found"})
 	}
 
-	return c.JSON(fiber.Map{"message": "Capture deleted successfully"})
+	// 2. If it is already in Trash (DeletedAt > 0), perform Hard Delete
+	if capture.DeletedAt > 0 {
+		payload := actor.DeleteCapturePayload{
+			UserID: userID,
+			ID:     captureID,
+		}
+		_, err := h.gateway.Send(actor.TypeDeleteCapture, payload, 5*time.Second)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to permanently delete capture"})
+		}
+		return c.JSON(fiber.Map{"message": "Capture permanently deleted successfully"})
+	}
+
+	// 3. Otherwise, set DeletedAt and perform Soft Delete
+	capture.DeletedAt = time.Now().Unix()
+	capture.UpdatedAt = time.Now().Unix()
+	_, err = h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to move capture to Trash"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Capture moved to Trash successfully"})
+}
+
+// Restore a soft-deleted capture
+func (h *CapturesHandler) Restore(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	captureID := c.Params("id")
+
+	// Fetch existing capture
+	fetchRes, err := h.gateway.Send(actor.TypeGetCapture, actor.GetCapturePayload{UserID: userID, ID: captureID}, 5*time.Second)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Capture not found"})
+	}
+	capture, ok := fetchRes.(db.Capture)
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "Capture not found"})
+	}
+
+	capture.DeletedAt = 0
+	capture.UpdatedAt = time.Now().Unix()
+	_, err = h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to restore capture"})
+	}
+
+	return c.JSON(capture)
+}
+
+// EmptyTrash deletes all soft-deleted captures permanently
+func (h *CapturesHandler) EmptyTrash(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	// Fetch all captures for the user with projectFilter == "Trash" (returns soft-deleted captures)
+	payload := actor.ListCapturesPayload{
+		UserID:        userID,
+		ProjectFilter: "Trash",
+	}
+	res, err := h.gateway.Send(actor.TypeListCaptures, payload, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to list trash captures"})
+	}
+	captures, ok := res.([]db.Capture)
+	if !ok {
+		captures = []db.Capture{}
+	}
+
+	deletedCount := 0
+	for _, cap := range captures {
+		delPayload := actor.DeleteCapturePayload{
+			UserID: userID,
+			ID:     cap.ID,
+		}
+		_, err = h.gateway.Send(actor.TypeDeleteCapture, delPayload, 5*time.Second)
+		if err != nil {
+			log.Printf("[CapturesHandler] EmptyTrash: failed to delete capture %s: %v", cap.ID, err)
+		} else {
+			deletedCount++
+		}
+	}
+
+	return c.JSON(fiber.Map{"message": "Trash emptied successfully", "count": deletedCount})
 }
 
 // List user's unique projects

@@ -485,7 +485,7 @@
                 card.className = `glass-card capture-card fade-in capture-card-${capType}`;
                 
                 // Highlight exact/high semantic match
-                if (score !== null && score > 0.40) {
+                if (score !== null && score > 0.65) {
                     card.classList.add('high-match');
                 }
 
@@ -507,7 +507,7 @@
                 let scoreBadge = '';
                 if (score !== null) {
                     const pct = Math.round(score * 100);
-                    const isHigh = score > 0.40;
+                    const isHigh = score > 0.65;
                     scoreBadge = `<span class="card-badge score-badge ${isHigh ? 'glow-green' : ''}"><i class="fa-solid fa-brain"></i> Match: ${pct}%</span>`;
                 }
 
@@ -528,7 +528,22 @@
                             </a>
                         </div>`;
                 } else if (capType === 'code') {
-                    bodyHtml = `<pre><code>${bodySnippet}</code></pre>`;
+                    let codeText = cap.body.trim();
+                    if (codeText.startsWith('```') && codeText.endsWith('```')) {
+                        const firstNewline = codeText.indexOf('\n');
+                        if (firstNewline !== -1) {
+                            codeText = codeText.substring(firstNewline + 1, codeText.length - 3).trim();
+                        } else {
+                            codeText = codeText.substring(3, codeText.length - 3).trim();
+                        }
+                    } else {
+                        codeText = codeText.replace(/^```(?:\w*)\n?/, '').replace(/\n?```$/, '').trim();
+                    }
+                    let snippet = escapeHtml(codeText);
+                    if (snippet.length > 250) {
+                        snippet = snippet.substring(0, 250) + "...";
+                    }
+                    bodyHtml = `<pre><code>${snippet}</code></pre>`;
                 } else if (capType === 'qa') {
                     let qText = cap.body;
                     let aText = "";
@@ -757,7 +772,7 @@
 
                     if (res.status === 200) {
                         const results = await res.json();
-                        const highMatches = results.filter(item => item.similarity > 0.40);
+                        const highMatches = results.filter(item => item.similarity > 0.65);
 
                         if (highMatches.length > 0) {
                             el.resurfaceList.innerHTML = '';

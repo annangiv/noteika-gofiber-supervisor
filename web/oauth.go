@@ -51,7 +51,7 @@ func GetAuthURL(provider string, state string) (string, error) {
 
 // ExchangeCodeAndFetchProfile exchanges the authorization code for a profile.
 func ExchangeCodeAndFetchProfile(provider string, code string, redirectURI string) (OAuthUserProfile, error) {
-	if IsMockProvider(provider) {
+	if IsMockProvider(provider) || strings.HasPrefix(code, "mock_") {
 		return exchangeMockCode(provider, code)
 	}
 

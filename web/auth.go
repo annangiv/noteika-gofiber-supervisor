@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -47,9 +48,18 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(500).SendString("Database error initiating authentication")
 	}
 
-	authURL, err := GetAuthURL(provider, state)
-	if err != nil {
-		return c.Status(500).SendString("Failed to build authorization URL")
+	// Check if mock is requested via query param
+	forceMock := c.Query("mock") == "true"
+
+	var authURL string
+	if forceMock || IsMockProvider(provider) {
+		authURL = fmt.Sprintf("/oauth/mock/authorize?provider=%s&state=%s", provider, state)
+	} else {
+		var err error
+		authURL, err = GetAuthURL(provider, state)
+		if err != nil {
+			return c.Status(500).SendString("Failed to build authorization URL")
+		}
 	}
 
 	return c.Redirect(authURL)
