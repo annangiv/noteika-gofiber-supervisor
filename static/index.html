@@ -524,7 +524,7 @@
                 card.className = 'glass-card capture-card fade-in';
                 
                 // Highlight exact/high semantic match
-                if (score !== null && score > 0.85) {
+                if (score !== null && score > 0.40) {
                     card.classList.add('high-match');
                 }
 
@@ -546,7 +546,7 @@
                 let scoreBadge = '';
                 if (score !== null) {
                     const pct = Math.round(score * 100);
-                    const isHigh = score > 0.85;
+                    const isHigh = score > 0.40;
                     scoreBadge = `<span class="card-badge score-badge ${isHigh ? 'glow-green' : ''}"><i class="fa-solid fa-brain"></i> Match: ${pct}%</span>`;
                 }
 
