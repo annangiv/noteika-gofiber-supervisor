@@ -164,7 +164,7 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	}
 	c.Cookie(cookie)
 
-	return c.Redirect("/")
+	return c.Redirect("/notes")
 }
 
 // Log out user

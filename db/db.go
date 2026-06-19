@@ -153,9 +153,24 @@ func (r *BadgerRepo) GetUserByEmailHash(hash []byte) (User, error) {
 }
 
 func (r *BadgerRepo) DeleteUser(id string) error {
+	return r.DeleteUserAndData(id)
+}
+
+// DeleteUserAndData removes the user record, email index, and all captures.
+func (r *BadgerRepo) DeleteUserAndData(userID string) error {
 	return r.db.Update(func(txn *badger.Txn) error {
-		// Fetch user to delete secondary index as well
-		userKey := []byte(fmt.Sprintf("user:id:%s", id))
+		capturePrefix := []byte(fmt.Sprintf("capture:%s:", userID))
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Seek(capturePrefix); it.ValidForPrefix(capturePrefix); it.Next() {
+			if err := txn.Delete(it.Item().KeyCopy(nil)); err != nil {
+				return err
+			}
+		}
+
+		userKey := []byte(fmt.Sprintf("user:id:%s", userID))
 		item, err := txn.Get(userKey)
 		if err != nil {
 			if err == badger.ErrKeyNotFound {
@@ -165,29 +180,19 @@ func (r *BadgerRepo) DeleteUser(id string) error {
 		}
 
 		var user User
-		err = item.Value(func(val []byte) error {
+		if err := item.Value(func(val []byte) error {
 			return json.Unmarshal(val, &user)
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 
-		// Delete primary record
 		if err := txn.Delete(userKey); err != nil {
 			return err
 		}
 
-		// Delete secondary index
 		emailHashHex := hex.EncodeToString(user.EmailHash)
 		indexKey := []byte(fmt.Sprintf("user:email_hash:%s", emailHashHex))
-		if err := txn.Delete(indexKey); err != nil {
-			return err
-		}
-
-		// Optional: clean up sessions for user
-		// In badger, we would prefix scan session keys and delete those that match user.ID.
-		// For simplicity, we keep them or let them expire naturally.
-		return nil
+		return txn.Delete(indexKey)
 	})
 }
 

@@ -1,5 +1,8 @@
-# Database
+# Database (BadgerDB runtime data — never commit)
 data/
+data-test/
+*.vlog
+*.mem
 
 # Environment files
 .env
@@ -7,3 +10,6 @@ data/
 # Go binaries
 server
 go-fiber-supervisor
+
+# Frontend build artifacts (built in Docker)
+frontend/node_modules/

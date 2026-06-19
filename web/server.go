@@ -52,10 +52,16 @@ func (s *Server) Start(port string) error {
 	// Setup handlers
 	authHandler := NewAuthHandler(s.gateway)
 	capturesHandler := NewCapturesHandler(s.gateway)
+	accountHandler := NewAccountHandler(s.gateway)
 	debugHandler := NewDebugHandler(s.supervisor, s.registry, s.gateway)
 
 	// Static assets route
 	s.app.Static("/static", "./static")
+
+	// Favicon (browsers request /favicon.ico by default)
+	s.app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		return c.SendFile("./static/favicon.svg")
+	})
 
 	// ==========================================
 	// PAGES / SPA SHELL ROUTER
@@ -66,7 +72,11 @@ func (s *Server) Start(port string) error {
 	}
 	s.app.Get("/", pageHandler)
 	s.app.Get("/login", pageHandler)
-	s.app.Get("/dashboard", pageHandler)
+	s.app.Get("/pricing", pageHandler)
+	s.app.Get("/about", pageHandler)
+	s.app.Get("/notes", pageHandler)
+	s.app.Get("/account", pageHandler)
+	s.app.Get("/dashboard", pageHandler) // legacy redirect target
 
 	// ==========================================
 	// NATIVE FIBER MOCK OAUTH ENDPOINTS
@@ -209,6 +219,10 @@ func (s *Server) Start(port string) error {
 	api.Post("/captures/restore/:id", capturesHandler.Restore)
 	api.Get("/projects", capturesHandler.ListProjects)
 	api.Post("/captures/search", capturesHandler.Search)
+
+	// Account
+	api.Get("/account/export", accountHandler.Export)
+	api.Delete("/account", accountHandler.DeleteAccount)
 
 	// Debug & Telemetry
 	api.Post("/debug/crash", debugHandler.Crash)

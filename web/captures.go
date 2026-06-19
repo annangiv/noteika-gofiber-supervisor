@@ -19,6 +19,12 @@ import (
 	"my-app/utils"
 )
 
+const (
+	defaultSearchMinSimilarity = float32(0.35)
+	defaultSearchLimit         = 20
+	maxSearchLimit             = 50
+)
+
 type CapturesHandler struct {
 	gateway *actor.ActorGateway
 }
@@ -167,12 +173,12 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		project = "Inbox"
 	}
 
-	// Generate embedding vector on the backend
+	// Generate embedding vector on the backend (best-effort — save still succeeds without it)
 	embeddingText := title + "\n" + input.Body
 	vector, err := getEmbedding(embeddingText)
 	if err != nil {
-		log.Printf("[CapturesHandler] Failed to get embedding from sidecar: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate semantic embedding"})
+		log.Printf("[CapturesHandler] Embedding unavailable on create, saving without vector: %v", err)
+		vector = nil
 	}
 
 	cType := classifyContentType(input.Body)
@@ -221,7 +227,7 @@ func (h *CapturesHandler) List(c *fiber.Ctx) error {
 	}
 
 	captures, ok := res.([]db.Capture)
-	if !ok {
+	if !ok || captures == nil {
 		captures = []db.Capture{}
 	}
 
@@ -314,10 +320,10 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		embeddingText := existing.Title + "\n" + existing.Body
 		vector, err := getEmbedding(embeddingText)
 		if err != nil {
-			log.Printf("[CapturesHandler] Failed to get embedding from sidecar: %v", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to update semantic embedding"})
+			log.Printf("[CapturesHandler] Embedding unavailable on update, keeping prior vector: %v", err)
+		} else {
+			existing.Embedding = vector
 		}
-		existing.Embedding = vector
 		existing.Type = classifyContentType(existing.Body)
 	}
 
@@ -456,7 +462,7 @@ func (h *CapturesHandler) ListProjects(c *fiber.Ctx) error {
 	}
 
 	projects, ok := res.([]string)
-	if !ok {
+	if !ok || projects == nil {
 		projects = []string{"Inbox"}
 	}
 
@@ -468,6 +474,57 @@ type SearchResult struct {
 	Similarity float32    `json:"similarity"`
 }
 
+type searchRequest struct {
+	Query         string   `json:"query"`
+	Project       string   `json:"project"`
+	MinSimilarity *float32 `json:"min_similarity"`
+	Limit         int      `json:"limit"`
+	ExcludeID     string   `json:"exclude_id"`
+}
+
+func rankCapturesBySimilarity(query string, queryVector []float32, captures []db.Capture, opts searchRequest) []SearchResult {
+	minSim := defaultSearchMinSimilarity
+	if opts.MinSimilarity != nil {
+		minSim = *opts.MinSimilarity
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+
+	var results []SearchResult
+	for _, cap := range captures {
+		if opts.ExcludeID != "" && cap.ID == opts.ExcludeID {
+			continue
+		}
+
+		similarity := utils.CombinedSimilarity(query, cap.Title, cap.Body, queryVector, cap.Embedding)
+		if similarity < minSim {
+			continue
+		}
+
+		results = append(results, SearchResult{
+			Capture:    cap,
+			Similarity: similarity,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	if results == nil {
+		results = []SearchResult{}
+	}
+	return results
+}
+
 // Perform Semantic Vector Search
 func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
@@ -475,27 +532,25 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	var input struct {
-		Query string `json:"query"`
-	}
-
+	var input searchRequest
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	if strings.TrimSpace(input.Query) == "" {
+	query := strings.TrimSpace(input.Query)
+	if query == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Query text is required"})
 	}
 
-	// Fetch embedding from sidecar
-	queryVector, err := getEmbedding(input.Query)
+	// Best-effort embedding — text similarity still works without it
+	queryVector, err := getEmbedding(query)
 	if err != nil {
-		log.Printf("[CapturesHandler] Failed to get embedding for query: %v", err)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate search embedding"})
+		log.Printf("[CapturesHandler] Embedding unavailable for search, using text similarity: %v", err)
+		queryVector = nil
 	}
 
-	// Fetch all captures for user
-	listPayload := actor.ListCapturesPayload{UserID: userID, ProjectFilter: ""}
+	projectFilter := strings.TrimSpace(input.Project)
+	listPayload := actor.ListCapturesPayload{UserID: userID, ProjectFilter: projectFilter}
 	res, err := h.gateway.Send(actor.TypeListCaptures, listPayload, 5*time.Second)
 	if err != nil {
 		if err == actor.ErrActorUnavailable {
@@ -505,31 +560,9 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	}
 
 	captures, ok := res.([]db.Capture)
-	if !ok || len(captures) == 0 {
-		return c.JSON([]SearchResult{})
+	if !ok || captures == nil {
+		captures = []db.Capture{}
 	}
 
-	// Compute cosine similarity in memory
-	var results []SearchResult
-	for _, cap := range captures {
-		var similarity float32
-		if len(cap.Embedding) > 0 {
-			similarity = utils.CosineSimilarity(queryVector, cap.Embedding)
-		} else {
-			// Captures created without vector get a 0 score
-			similarity = 0.0
-		}
-
-		results = append(results, SearchResult{
-			Capture:    cap,
-			Similarity: similarity,
-		})
-	}
-
-	// Sort by similarity descending
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Similarity > results[j].Similarity
-	})
-
-	return c.JSON(results)
+	return c.JSON(rankCapturesBySimilarity(query, queryVector, captures, input))
 }

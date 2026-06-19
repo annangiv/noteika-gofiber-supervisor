@@ -1,0 +1,22 @@
+# Dependencies (installed inside the image)
+frontend/node_modules
+**/node_modules
+
+# Host-built static — Stage 1 rebuilds this inside Docker
+static/
+
+# Local runtime data (mounted as a volume in compose)
+data/
+
+# Git & IDE
+.git
+.gitignore
+.vscode
+.cursor
+
+# Secrets (injected via docker-compose env_file)
+.env
+
+# Go binaries built locally
+server
+go-fiber-supervisor
