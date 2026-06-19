@@ -1,0 +1,9 @@
+# Database
+data/
+
+# Environment files
+.env
+
+# Go binaries
+server
+go-fiber-supervisor

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>keller — Go Fiber OTP Supervisor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="stars"></div>
+    <div class="ambient-glow g1"></div>
+    <div class="ambient-glow g2"></div>
+
+    <div id="toast-container"></div>
+
+    <!-- MAIN APP CONTAINER -->
+    <main id="app">
+        <!-- Loader Screen -->
+        <div id="app-loader" class="loader-container">
+            <div class="spinner"></div>
+            <p>Initializing supervised node...</p>
+        </div>
+
+        <!-- AUTH SCREEN -->
+        <section id="auth-screen" class="glass-card fade-in hidden">
+            <div class="auth-header">
+                <div class="logo">
+                    <i class="fa-solid fa-shield-halved logo-icon"></i>
+                    <h1>keller</h1>
+                </div>
+                <p class="subtitle">Erlang OTP Supervised Actor Web Application</p>
+            </div>
+            
+            <div class="auth-body">
+                <p class="instruction">Select a provider to authenticate securely</p>
+                <div class="btn-group">
+                    <a href="/auth/login/github" class="btn btn-github">
+                        <i class="fa-brands fa-github"></i> Authenticate with GitHub
+                    </a>
+                    <a href="/auth/login/google" class="btn btn-google">
+                        <i class="fa-brands fa-google"></i> Authenticate with Google
+                    </a>
+                    <a href="/auth/login/github" class="btn btn-mock" id="btn-dev-login">
+                        <i class="fa-solid fa-code"></i> Developer Mock Login
+                    </a>
+                </div>
+            </div>
+            <div class="auth-footer">
+                <p>BadgerDB Embedded Key-Value Storage</p>
+            </div>
+        </section>
+
+        <!-- DASHBOARD SCREEN -->
+        <section id="dashboard-screen" class="hidden">
+            <!-- Navbar -->
+            <nav class="navbar glass-card">
+                <div class="nav-left">
+                    <div class="logo logo-sm">
+                        <i class="fa-solid fa-shield-halved logo-icon"></i>
+                        <h1>keller</h1>
+                    </div>
+                    <span class="badge">Supervised Node</span>
+                </div>
+                <div class="nav-right" id="user-profile">
+                    <div class="user-info">
+                        <span id="user-name" class="user-name">Developer User</span>
+                        <span id="user-email" class="user-email">dev-user@example.com</span>
+                    </div>
+                    <a href="/auth/logout" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i></a>
+                </div>
+            </nav>
+
+            <!-- Main Layout -->
+            <div class="dashboard-grid">
+                <!-- Notes Column -->
+                <div class="notes-column">
+                    <!-- Create Note Form -->
+                    <div class="glass-card note-form-container">
+                        <h2><i class="fa-solid fa-pen-nib"></i> New Note</h2>
+                        <form id="note-form">
+                            <div class="form-group">
+                                <label for="note-title">Title</label>
+                                <input type="text" id="note-title" placeholder="A brief reminder..." required>
+                            </div>
+                            <div class="form-group">
+                                <label for="note-content">Content</label>
+                                <textarea id="note-content" rows="5" placeholder="Write something remarkable..." required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fa-solid fa-plus"></i> Save Note
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Telemetry Stats Panel -->
+                    <div class="glass-card telemetry-stats-container">
+                        <h2><i class="fa-solid fa-gauge-high"></i> Actor Telemetry</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-label">Supervisor Status</span>
+                                <span class="stat-value text-glow-green" id="telemetry-status">Running</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">Actor Restart Count</span>
+                                <span class="stat-value text-glow-purple" id="telemetry-restarts">0</span>
+                            </div>
+                        </div>
+                        <div class="stat-card full-width">
+                            <span class="stat-label">Mailbox Channel Address</span>
+                            <span class="stat-value text-mono text-glow-blue" id="telemetry-mailbox">0x000000000</span>
+                        </div>
+                        <button id="btn-crash-actor" class="btn btn-danger">
+                            <i class="fa-solid fa-skull-crossbones"></i> Trigger Actor Crash (Panic)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- List/Logs Column -->
+                <div class="list-column">
+                    <!-- Notes Grid -->
+                    <div class="notes-section">
+                        <h2><i class="fa-solid fa-clipboard-list"></i> Saved Notes</h2>
+                        <div id="notes-grid" class="notes-grid-layout">
+                            <!-- Note cards will be dynamically loaded here -->
+                            <div class="no-notes-placeholder">
+                                <i class="fa-regular fa-folder-open"></i>
+                                <p>No notes found. Let's create one!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Logs Panel -->
+                    <div class="glass-card logs-panel">
+                        <div class="logs-header">
+                            <h2><i class="fa-solid fa-terminal"></i> Supervisor Event Log</h2>
+                            <button id="btn-clear-logs" class="btn-icon"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                        <div id="log-terminal" class="terminal-body">
+                            <!-- Logs will stream here -->
+                            <div class="log-line system">[SYSTEM] Supervisor connected. Monitoring actor 'VaultActor'.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // SPA state and handling
+        let currentUser = null;
+        let pollingInterval = null;
+
+        const el = {
+            loader: document.getElementById('app-loader'),
+            authScreen: document.getElementById('auth-screen'),
+            dashboardScreen: document.getElementById('dashboard-screen'),
+            userName: document.getElementById('user-name'),
+            userEmail: document.getElementById('user-email'),
+            noteForm: document.getElementById('note-form'),
+            noteTitle: document.getElementById('note-title'),
+            noteContent: document.getElementById('note-content'),
+            notesGrid: document.getElementById('notes-grid'),
+            telemetryStatus: document.getElementById('telemetry-status'),
+            telemetryRestarts: document.getElementById('telemetry-restarts'),
+            telemetryMailbox: document.getElementById('telemetry-mailbox'),
+            btnCrashActor: document.getElementById('btn-crash-actor'),
+            btnClearLogs: document.getElementById('btn-clear-logs'),
+            logTerminal: document.getElementById('log-terminal'),
+            btnDevLogin: document.getElementById('btn-dev-login')
+        };
+
+        // Custom logging utility
+        function addLog(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const logLine = document.createElement('div');
+            logLine.className = `log-line ${type}`;
+            logLine.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-msg">${message}</span>`;
+            el.logTerminal.appendChild(logLine);
+            el.logTerminal.scrollTop = el.logTerminal.scrollHeight;
+        }
+
+        // Show Toast messages
+        function showToast(message, type = 'success') {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            let icon = 'fa-check';
+            if (type === 'error') icon = 'fa-exclamation-triangle';
+            if (type === 'info') icon = 'fa-info-circle';
+
+            toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+            toastContainer.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Remove toast
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Initialize SPA
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/auth/me');
+                if (res.status === 200) {
+                    currentUser = await res.json();
+                    showDashboard();
+                } else {
+                    showLogin();
+                }
+            } catch (err) {
+                console.error("Auth check failed", err);
+                showLogin();
+            }
+        }
+
+        function showLogin() {
+            el.loader.classList.add('hidden');
+            el.dashboardScreen.classList.add('hidden');
+            el.authScreen.classList.remove('hidden');
+            
+            // Setup dev login with mock parameter
+            el.btnDevLogin.href = "/auth/login/github"; // Trigger github mock
+            
+            if (pollingInterval) clearInterval(pollingInterval);
+        }
+
+        function showDashboard() {
+            el.loader.classList.add('hidden');
+            el.authScreen.classList.add('hidden');
+            el.dashboardScreen.classList.remove('hidden');
+
+            el.userName.textContent = currentUser.full_name;
+            el.userEmail.textContent = currentUser.email;
+
+            addLog(`Authenticated as ${currentUser.full_name} (${currentUser.email})`, 'success');
+            
+            // Load notes and start telemetry polling
+            loadNotes();
+            loadTelemetry();
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(loadTelemetry, 1500); // Poll telemetry every 1.5s
+        }
+
+        // Notes REST CRUD operations
+        async function loadNotes() {
+            try {
+                const res = await fetch('/api/notes');
+                if (res.status === 200) {
+                    const notes = await res.json();
+                    renderNotes(notes);
+                } else if (res.status === 503) {
+                    showToast("Database actor is restarting, notes temporarily unavailable", "info");
+                    addLog("[API] ListNotes failed: Database actor is offline (restarting)", "warning");
+                }
+            } catch (err) {
+                console.error("Load notes failed", err);
+            }
+        }
+
+        function renderNotes(notes) {
+            el.notesGrid.innerHTML = '';
+            
+            if (!notes || notes.length === 0) {
+                el.notesGrid.innerHTML = `
+                    <div class="no-notes-placeholder">
+                        <i class="fa-regular fa-folder-open"></i>
+                        <p>No notes found. Let's create one!</p>
+                    </div>`;
+                return;
+            }
+
+            // Sort by CreatedAt descending
+            notes.sort((a, b) => b.created_at - a.created_at);
+
+            notes.forEach(note => {
+                const card = document.createElement('div');
+                card.className = 'glass-card note-card fade-in';
+                
+                const timeStr = new Date(note.created_at * 1000).toLocaleString();
+
+                card.innerHTML = `
+                    <div class="note-card-header">
+                        <h3>${escapeHtml(note.title)}</h3>
+                        <button class="btn-delete" onclick="deleteNote('${note.id}')"><i class="fa-regular fa-trash-can"></i></button>
+                    </div>
+                    <p class="note-card-content">${escapeHtml(note.content).replace(/\n/g, '<br>')}</p>
+                    <div class="note-card-footer">
+                        <span><i class="fa-regular fa-clock"></i> ${timeStr}</span>
+                    </div>`;
+                el.notesGrid.appendChild(card);
+            });
+        }
+
+        async function createNote(title, content) {
+            try {
+                addLog(`[API] Creating note: "${title}"`, 'info');
+                const res = await fetch('/api/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content })
+                });
+
+                if (res.status === 201) {
+                    showToast("Note created successfully!");
+                    addLog(`[API] Note saved: "${title}"`, 'success');
+                    el.noteForm.reset();
+                    loadNotes();
+                } else if (res.status === 503) {
+                    showToast("Failed: Database actor is currently offline/restarting", "error");
+                    addLog("[API] SaveNote aborted: database actor offline", "error");
+                } else {
+                    const data = await res.json();
+                    showToast(data.error || "Failed to create note", "error");
+                }
+            } catch (err) {
+                showToast("Request failed", "error");
+            }
+        }
+
+        async function deleteNote(id) {
+            try {
+                addLog(`[API] Deleting note: ${id}`, 'info');
+                const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+                
+                if (res.status === 200) {
+                    showToast("Note deleted");
+                    addLog(`[API] Note deleted: ${id}`, 'success');
+                    loadNotes();
+                } else if (res.status === 503) {
+                    showToast("Failed: Database actor is currently offline/restarting", "error");
+                    addLog("[API] DeleteNote aborted: database actor offline", "error");
+                } else {
+                    showToast("Failed to delete note", "error");
+                }
+            } catch (err) {
+                showToast("Request failed", "error");
+            }
+        }
+
+        // Telemetry stats polling
+        let lastMailboxAddr = null;
+        let lastRestartsCount = 0;
+
+        async function loadTelemetry() {
+            try {
+                const res = await fetch('/api/debug/stats');
+                if (res.status === 200) {
+                    const stats = await res.json();
+
+                    // Check for changes to indicate restarts
+                    if (lastMailboxAddr && lastMailboxAddr !== stats.mailbox_addr) {
+                        addLog(`[Supervisor] Mailbox channel changed from ${lastMailboxAddr} to ${stats.mailbox_addr}`, 'system');
+                        addLog(`[Supervisor] Actor fully recovered and back online`, 'success');
+                        showToast("VaultActor restarted and recovered!", "success");
+                        loadNotes(); // Reload notes since DB is back online
+                    }
+
+                    if (stats.restarts_count > lastRestartsCount) {
+                        addLog(`[Supervisor] Telemetry registered restart: ${stats.restarts_count}`, 'warning');
+                    }
+
+                    lastMailboxAddr = stats.mailbox_addr;
+                    lastRestartsCount = stats.restarts_count;
+
+                    // Update UI
+                    el.telemetryStatus.textContent = stats.status.toUpperCase();
+                    el.telemetryStatus.className = stats.status === 'running' ? 'stat-value text-glow-green' : 'stat-value text-glow-red';
+                    
+                    el.telemetryRestarts.textContent = stats.restarts_count;
+                    el.telemetryMailbox.textContent = stats.mailbox_addr;
+                }
+            } catch (err) {
+                console.error("Telemetry fetch failed", err);
+            }
+        }
+
+        // Trigger Actor Crash
+        el.btnCrashActor.addEventListener('click', async () => {
+            addLog("[Telemetry] Sending Crash Signal to VaultActor...", 'warning');
+            el.btnCrashActor.disabled = true;
+            
+            try {
+                const res = await fetch('/api/debug/crash', { method: 'POST' });
+                const data = await res.json();
+                
+                showToast("Panic triggered in VaultActor!", "info");
+                addLog(`[VaultActor] CRITICAL: Panicked: ${data.error || "actor panic"}`, 'error');
+                addLog(`[Supervisor] Intercepted panic. Triggering crash restart sequence...`, 'system');
+
+            } catch (err) {
+                // If it crashes, request might fail, which is expected
+                addLog("[Supervisor] Connection interrupted during crash", 'warning');
+            }
+
+            // Re-enable button after short wait
+            setTimeout(() => {
+                el.btnCrashActor.disabled = false;
+            }, 2000);
+        });
+
+        // Submit form
+        el.noteForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = el.noteTitle.value.trim();
+            const content = el.noteContent.value.trim();
+            createNote(title, content);
+        });
+
+        // Clear terminal
+        el.btnClearLogs.addEventListener('click', () => {
+            el.logTerminal.innerHTML = '';
+            addLog('Logs cleared', 'info');
+        });
+
+        // HTML Escaping
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        // Start
+        checkAuth();
+    </script>
+</body>
+</html>
