@@ -98,3 +98,14 @@ export function mergeTags(...lists) {
   }
   return out.sort().slice(0, 12);
 }
+
+/** Same text blob embedded on save (passage) and duplicate check (query). */
+export function buildCaptureEmbeddingText(body, tagsInput = '') {
+  const title = generateAutoTitle(body);
+  const tags = mergeTags(parseTagsInput(tagsInput), parseHashtags(body));
+  const parts = [];
+  if (tags.length > 0) parts.push(tags.join(' '));
+  if (title.trim()) parts.push(title.trim());
+  if ((body ?? '').trim()) parts.push(body.trim());
+  return parts.join('\n');
+}

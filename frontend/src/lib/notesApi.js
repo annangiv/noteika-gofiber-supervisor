@@ -1,5 +1,6 @@
-import { embedText } from './embeddings';
+import { embedQuery, embedPassage } from './embeddings';
 import { decryptCaptureList, decryptCaptureRecord } from './crypto';
+import { buildCaptureEmbeddingText } from './captureContent';
 
 export const DEFAULT_SEARCH_MIN = 0.70;
 export const SEARCH_MIN_FLOOR = 0.50;
@@ -8,12 +9,9 @@ export const SEARCH_MIN_CEILING = 0.85;
 export const SIMILARITY = {
   SEARCH_MIN: DEFAULT_SEARCH_MIN,
   BANNER: 0.65,
-  DUPLICATE_WARN: 0.55,
-  DUPLICATE_SAVE: 0.70,
-  RESURFACE: 0.45,
+  DUPLICATE_WARN: 0.65,
+  DUPLICATE_SAVE: 0.78,
 };
-
-export const LAST_SEARCH_KEY = 'noteika_last_search';
 
 export async function decryptSearchResults(vaultKey, results) {
   if (!vaultKey || !Array.isArray(results)) return results ?? [];
@@ -25,10 +23,65 @@ export async function decryptSearchResults(vaultKey, results) {
   );
 }
 
-export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null } = {}) {
+function queryTerms(query) {
+  return (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** How strongly decrypted capture text mentions query terms (title > tags > body). */
+function captureTextMatchScore(query, capture) {
+  const terms = queryTerms(query);
+  if (!terms.length || !capture) return 0;
+
+  const title = (capture.title ?? '').toLowerCase();
+  const body = (capture.body ?? '').toLowerCase();
+  const tags = (capture.tags ?? []).join(' ').toLowerCase();
+
+  let score = 0;
+  for (const term of terms) {
+    if (title.includes(term)) score += 3;
+    else if (tags.includes(term)) score += 2;
+    else if (body.includes(term)) score += 1;
+  }
+  return score;
+}
+
+/**
+ * After decrypt: prefer notes that literally mention the query.
+ * Single-word searches drop embedding-only noise when a text match exists
+ * (e.g. "noteika" should not surface grocery notes at 63%).
+ */
+export function rerankSearchResults(query, results) {
+  if (!Array.isArray(results) || results.length === 0) return results ?? [];
+
+  const terms = queryTerms(query);
+  if (!terms.length) return results;
+
+  const scored = results.map((item) => ({
+    ...item,
+    textMatch: captureTextMatchScore(query, item.capture),
+  }));
+
+  const hasTextMatch = scored.some((item) => item.textMatch > 0);
+  let ranked = scored;
+
+  if (terms.length === 1 && hasTextMatch) {
+    ranked = scored.filter((item) => item.textMatch > 0);
+  }
+
+  ranked.sort((a, b) => {
+    if (b.textMatch !== a.textMatch) return b.textMatch - a.textMatch;
+    return b.similarity - a.similarity;
+  });
+
+  return ranked.map(({ textMatch: _textMatch, ...item }) => item);
+}
+
+export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
   let embedding = queryEmbedding;
   if (!embedding?.length && query?.trim()) {
-    embedding = await embedText(query.trim());
+    embedding = asPassage
+      ? await embedPassage(query.trim())
+      : await embedQuery(query.trim());
   }
   if (!embedding?.length) return [];
 
@@ -46,6 +99,25 @@ export async function searchCaptures(query, { project = '', minSimilarity = DEFA
   if (!res.ok) return [];
   const data = await res.json();
   return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Duplicate check: embed draft as BGE query vs stored passage vectors (same text as save).
+ * Asymmetric query↔passage avoids passage↔passage false positives between unrelated notes.
+ */
+export async function findDuplicateMatches(formBody, formTags, vaultKey, { limit = 5 } = {}) {
+  const embedText = buildCaptureEmbeddingText(formBody, formTags);
+  if (!embedText.trim() || !vaultKey) return [];
+
+  const queryEmbedding = await embedQuery(embedText);
+  if (!queryEmbedding.length) return [];
+
+  const matches = await searchCaptures('', {
+    queryEmbedding,
+    minSimilarity: SIMILARITY.DUPLICATE_WARN,
+    limit,
+  });
+  return decryptSearchResults(vaultKey, matches);
 }
 
 /** Plain-language hint for the search sensitivity slider (pct = 50–85). */

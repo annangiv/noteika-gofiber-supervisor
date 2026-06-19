@@ -670,15 +670,10 @@ func rankCapturesBySimilarity(query string, queryVector []float32, captures []db
 		}
 
 		capVector := captureSearchVector(cap)
-		var similarity float32
-		if cap.IsEncrypted() {
-			if len(queryVector) == 0 || len(capVector) == 0 {
-				continue
-			}
-			similarity = utils.CosineSimilarity(queryVector, capVector)
-		} else {
-			similarity = utils.CombinedSimilarity(query, cap.Title, cap.Body, cap.Tags, queryVector, cap.LegacyEmbedding)
+		if len(queryVector) == 0 || len(capVector) == 0 {
+			continue
 		}
+		similarity := utils.CosineSimilarity(queryVector, capVector)
 		if similarity < minSim {
 			continue
 		}

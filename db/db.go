@@ -49,7 +49,7 @@ type Capture struct {
 	SourceURL string `json:"source_url,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
 	Type      string `json:"type"` // "note", "link", "qa", "code"
-	EncryptedEmbedding []byte    `json:"-"`
+	EncryptedEmbedding []byte    `json:"encrypted_embedding,omitempty"`
 	LegacyEmbedding    []float32 `json:"embedding,omitempty"`
 	CreatedAt int64     `json:"created_at"`
 	UpdatedAt int64     `json:"updated_at"`

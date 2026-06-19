@@ -77,6 +77,7 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/about", pageHandler)
 	s.app.Get("/notes", pageHandler)
 	s.app.Get("/account", pageHandler)
+	s.app.Get("/dev/import", pageHandler)
 	s.app.Get("/dashboard", pageHandler) // legacy redirect target
 
 	// ==========================================
@@ -231,6 +232,9 @@ func (s *Server) Start(port string) error {
 	// Debug & Telemetry
 	api.Post("/debug/crash", debugHandler.Crash)
 	api.Get("/debug/stats", debugHandler.Stats)
+
+	// SPA fallback for client-side routes (after /api, /static, /auth, /oauth)
+	s.app.Get("/*", pageHandler)
 
 	// Run Web Server
 	log.Printf("[Fiber] Server starting on port %s", port)

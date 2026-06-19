@@ -7,6 +7,7 @@ import AboutPage from './pages/AboutPage';
 import LoginPage from './pages/LoginPage';
 import NotesPage from './pages/NotesPage';
 import AccountPage from './pages/AccountPage';
+import DevImportPage from './pages/DevImportPage';
 
 export default function App() {
   return (
@@ -31,6 +32,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <AccountPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dev/import"
+          element={
+            <ProtectedRoute>
+              <DevImportPage />
             </ProtectedRoute>
           }
         />

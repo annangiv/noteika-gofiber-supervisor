@@ -244,32 +244,6 @@
 .resurface-item-title { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resurface-item-score { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
-.resurface-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  background: var(--primary-soft);
-  border: 1px solid #c7d2fe;
-  border-radius: var(--radius-sm);
-  margin-bottom: 12px;
-  font-size: 14px;
-}
-.resurface-banner-left { display: flex; align-items: flex-start; gap: 10px; color: var(--text); }
-.btn-resurface-view {
-  flex-shrink: 0;
-  padding: 8px 14px;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.btn-resurface-view:hover { background: var(--primary-hover); }
-
 .captures-section { }
 .section-header {
   display: flex;

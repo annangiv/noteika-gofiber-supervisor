@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
-  SIMILARITY, LAST_SEARCH_KEY, searchCaptures, decryptSearchResults,
-  decryptCaptureList, formatRelativeTime, DEFAULT_SEARCH_MIN,
+  SIMILARITY, searchCaptures, decryptSearchResults,
+  decryptCaptureList, findDuplicateMatches, formatRelativeTime, DEFAULT_SEARCH_MIN,
+  rerankSearchResults,
 } from '../lib/notesApi';
 import { useVault } from '../context/VaultContext';
 import VaultGate from '../components/VaultGate';
-import { encryptCapturePayload } from '../lib/crypto';
-import { embedText, buildEmbeddingText } from '../lib/embeddings';
+import { saveCapture } from '../lib/saveCapture';
 import {
   generateAutoTitle, classifyContentType, parseTagsInput, formatTagsInput,
-  mergeTags, parseHashtags,
+  mergeTags, parseHashtags, buildCaptureEmbeddingText,
 } from '../lib/captureContent';
+import { embedPassage } from '../lib/embeddings';
+import { encryptCapturePayload } from '../lib/crypto';
 import '../notes.css';
 
 export default function NotesPage() {
@@ -41,13 +43,6 @@ export default function NotesPage() {
   const [saveDuplicateConfirm, setSaveDuplicateConfirm] = useState(null);
   const duplicateDebounceTimer = useRef(null);
   const searchDebounceTimer = useRef(null);
-
-  // Project resurface panels
-  const [projectRelated, setProjectRelated] = useState([]);
-  const [lastSearchRelated, setLastSearchRelated] = useState([]);
-
-  // Sticky banner for top search result
-  const [stickyBannerCapture, setStickyBannerCapture] = useState(null);
 
   // Telemetry logs states
   const [telemetry, setTelemetry] = useState({ restarts: 0, mailbox_addr: '0x00000000', status: 'Unknown' });
@@ -140,7 +135,6 @@ export default function NotesPage() {
       setSearchQuery('');
       setIsSearching(false);
       setSearchResults([]);
-      setStickyBannerCapture(null);
     }
   }, [user, selectedProject, vaultKey]);
 
@@ -189,65 +183,15 @@ export default function NotesPage() {
 
     duplicateDebounceTimer.current = setTimeout(async () => {
       try {
-        const matches = await searchCaptures(trimmed, {
-          minSimilarity: SIMILARITY.DUPLICATE_WARN,
-          limit: 5,
-        });
-        const decrypted = await decryptSearchResults(vaultKey, matches);
-        setDuplicateWarning(decrypted);
+        const matches = await findDuplicateMatches(trimmed, formTags, vaultKey, { limit: 5 });
+        setDuplicateWarning(matches);
       } catch (err) {
-        console.error('Proactive search failed:', err);
+        console.error('Proactive duplicate check failed:', err);
       }
     }, 500);
 
     return () => clearTimeout(duplicateDebounceTimer.current);
-  }, [formBody, vaultKey]);
-
-  // 4b. Resurface related captures when opening a project
-  useEffect(() => {
-    if (!user || !vaultKey || isSearching || selectedProject === 'Trash') {
-      setProjectRelated([]);
-      setLastSearchRelated([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadResurface() {
-      const project = selectedProject;
-
-      // Related to most recent capture in this project
-      if (captures.length > 0) {
-        const recent = captures[0];
-        const query = `${recent.title}\n${recent.body}`.slice(0, 800);
-        const related = await searchCaptures(query, {
-          project,
-          minSimilarity: SIMILARITY.RESURFACE,
-          limit: 3,
-          excludeId: recent.id,
-        });
-        if (!cancelled) setProjectRelated(await decryptSearchResults(vaultKey, related));
-      } else if (!cancelled) {
-        setProjectRelated([]);
-      }
-
-      // Similar to last search query (scoped to current project)
-      const lastQuery = sessionStorage.getItem(LAST_SEARCH_KEY);
-      if (lastQuery && lastQuery.trim()) {
-        const related = await searchCaptures(lastQuery, {
-          project,
-          minSimilarity: SIMILARITY.RESURFACE,
-          limit: 3,
-        });
-        if (!cancelled) setLastSearchRelated(await decryptSearchResults(vaultKey, related));
-      } else if (!cancelled) {
-        setLastSearchRelated([]);
-      }
-    }
-
-    loadResurface();
-    return () => { cancelled = true; };
-  }, [user, selectedProject, captures, isSearching, vaultKey]);
+  }, [formBody, formTags, vaultKey]);
 
   // 5. Semantic Search (debounced, whole docket)
   const searchMinSimilarity = user?.search_min_similarity ?? DEFAULT_SEARCH_MIN;
@@ -257,7 +201,6 @@ export default function NotesPage() {
     if (!trimmed || !vaultKey) {
       setIsSearching(false);
       setSearchResults([]);
-      setStickyBannerCapture(null);
       return;
     }
 
@@ -270,14 +213,7 @@ export default function NotesPage() {
         limit: 20,
       });
       const decrypted = await decryptSearchResults(vaultKey, matches);
-      setSearchResults(decrypted);
-      sessionStorage.setItem(LAST_SEARCH_KEY, trimmed);
-
-      if (decrypted.length > 0 && decrypted[0].similarity > SIMILARITY.BANNER) {
-        setStickyBannerCapture(decrypted[0]);
-      } else {
-        setStickyBannerCapture(null);
-      }
+      setSearchResults(rerankSearchResults(trimmed, decrypted));
       addLog(`[API] Found ${decrypted.length} semantic matches. Top match score: ${decrypted[0] ? Math.round(decrypted[0].similarity * 100) : 0}%`, 'info');
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
@@ -294,13 +230,8 @@ export default function NotesPage() {
   };
 
   // Check entire docket for duplicates before saving
-  const findSimilarInDocket = async (body) => {
-    const matches = await searchCaptures(body.trim(), {
-      minSimilarity: SIMILARITY.DUPLICATE_WARN,
-      limit: 5,
-    });
-    return decryptSearchResults(vaultKey, matches);
-  };
+  const findSimilarInDocket = async (body) =>
+    findDuplicateMatches(body, formTags, vaultKey, { limit: 5 });
 
   const performSave = async () => {
     if (!vaultKey) return;
@@ -308,41 +239,21 @@ export default function NotesPage() {
     addLog(`[API] Saving encrypted capture to project "${formProject || selectedProject || 'Inbox'}"...`, 'info');
 
     try {
-      const title = generateAutoTitle(formBody);
-      const tags = mergeTags(parseTagsInput(formTags), parseHashtags(formBody));
-      const cType = classifyContentType(formBody);
-      const embedding = await embedText(buildEmbeddingText(title, formBody, tags));
-      const ciphertext = await encryptCapturePayload(vaultKey, {
-        title,
+      await saveCapture(vaultKey, {
         body: formBody,
-        source_url: formSourceUrl,
-        tags,
+        tags: formTags,
+        project: formProject || selectedProject || 'Inbox',
+        sourceUrl: formSourceUrl,
       });
-
-      const res = await fetch('/api/captures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ciphertext,
-          embedding,
-          project: formProject || selectedProject || 'Inbox',
-          type: cType,
-        }),
-      });
-
-      if (res.ok) {
-        showToast('Capture saved successfully');
-        setFormBody('');
-        setFormTags('');
-        setFormProject('');
-        setFormSourceUrl('');
-        setDuplicateWarning([]);
-        setSaveDuplicateConfirm(null);
-        loadCaptures();
-        loadProjects();
-      } else {
-        showToast('Failed to save capture', 'error');
-      }
+      showToast('Capture saved successfully');
+      setFormBody('');
+      setFormTags('');
+      setFormProject('');
+      setFormSourceUrl('');
+      setDuplicateWarning([]);
+      setSaveDuplicateConfirm(null);
+      loadCaptures();
+      loadProjects();
     } catch (err) {
       showToast('Save failed — check vault and model', 'error');
     } finally {
@@ -379,7 +290,9 @@ export default function NotesPage() {
       const title = editingCapture.title || generateAutoTitle(editingCapture.body);
       const tags = editingCapture.tags ?? [];
       const cType = classifyContentType(editingCapture.body);
-      const embedding = await embedText(buildEmbeddingText(title, editingCapture.body, tags));
+      const embedding = await embedPassage(
+        buildCaptureEmbeddingText(editingCapture.body, formatTagsInput(tags)),
+      );
       const ciphertext = await encryptCapturePayload(vaultKey, {
         title,
         body: editingCapture.body,
@@ -623,7 +536,6 @@ export default function NotesPage() {
                   setSearchQuery('');
                   setIsSearching(false);
                   setSearchResults([]);
-                  setStickyBannerCapture(null);
                 }}
               >
                 <i className="fa-solid fa-xmark"></i>
@@ -769,70 +681,6 @@ export default function NotesPage() {
                 {displayedItems.length} item{displayedItems.length !== 1 ? 's' : ''}
               </span>
             </div>
-
-            {/* STICKY SEARCH RESURFACE BANNER */}
-            {isSearching && stickyBannerCapture && (
-              <div id="search-resurface-banner" className="resurface-banner">
-                <div className="resurface-banner-left">
-                  <i className="fa-solid fa-lightbulb"></i>
-                  <span id="resurface-banner-text">
-                    You saved this on {new Date(stickyBannerCapture.capture.created_at * 1000).toLocaleDateString()}:
-                    '<strong>{stickyBannerCapture.capture.title}</strong>' ({Math.round(stickyBannerCapture.similarity * 100)}% match)
-                  </span>
-                </div>
-                <button
-                  id="btn-resurface-view"
-                  className="btn-resurface-view"
-                  onClick={() => setEditingCapture(stickyBannerCapture.capture)}
-                >
-                  View Original
-                </button>
-              </div>
-            )}
-
-            {/* PROJECT RESURFACE: related to recent work */}
-            {!isSearching && selectedProject !== 'Trash' && projectRelated.length > 0 && (
-              <div className="resurface-alert" style={{ marginBottom: '16px' }}>
-                <div className="resurface-alert-header">
-                  <i className="fa-solid fa-layer-group"></i>
-                  <span>Related to recent work in {selectedProject}</span>
-                </div>
-                <div className="resurface-list">
-                  {projectRelated.map((item) => (
-                    <div
-                      key={item.capture.id}
-                      className="resurface-item"
-                      onClick={() => setEditingCapture(item.capture)}
-                    >
-                      <span className="resurface-item-title">{item.capture.title}</span>
-                      <span className="resurface-item-score">{Math.round(item.similarity * 100)}% related</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* PROJECT RESURFACE: similar to last search */}
-            {!isSearching && selectedProject !== 'Trash' && lastSearchRelated.length > 0 && (
-              <div className="resurface-alert" style={{ marginBottom: '16px' }}>
-                <div className="resurface-alert-header">
-                  <i className="fa-solid fa-clock-rotate-left"></i>
-                  <span>Similar to your last search in {selectedProject}</span>
-                </div>
-                <div className="resurface-list">
-                  {lastSearchRelated.map((item) => (
-                    <div
-                      key={item.capture.id}
-                      className="resurface-item"
-                      onClick={() => setEditingCapture(item.capture)}
-                    >
-                      <span className="resurface-item-title">{item.capture.title}</span>
-                      <span className="resurface-item-score">{Math.round(item.similarity * 100)}% match</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* FEED LIST */}
             <div id="captures-feed" className="captures-feed-layout">
