@@ -13,10 +13,8 @@ import {
 } from '../lib/captureContent';
 import { embedPassage } from '../lib/embeddings';
 import { encryptCapturePayload } from '../lib/crypto';
-import PrivacyTrustCard, { PrivacyActivityPanel } from '../components/PrivacyPanel';
-import {
-  createSaveActivity, createSearchActivity, createDuplicateCheckActivity,
-} from '../lib/privacyActivity';
+import PrivacyTrustCard from '../components/PrivacyPanel';
+import { privacyFlowEvent } from '../lib/privacyActivity';
 import '../notes.css';
 
 export default function NotesPage() {
@@ -48,12 +46,11 @@ export default function NotesPage() {
   const searchDebounceTimer = useRef(null);
   const lastDupPrivacyRef = useRef('');
 
-  // Privacy activity trace (save / search transparency)
-  const [privacyEvents, setPrivacyEvents] = useState([]);
+  // Sidebar flow animation on save / search
+  const [privacyFlow, setPrivacyFlow] = useState(null);
 
-  const pushPrivacyEvent = useCallback((event) => {
-    if (!event) return;
-    setPrivacyEvents((prev) => [event, ...prev].slice(0, 8));
+  const triggerPrivacyFlow = useCallback((type) => {
+    setPrivacyFlow(privacyFlowEvent(type));
   }, []);
 
   // Modals state
@@ -155,7 +152,7 @@ export default function NotesPage() {
         const sig = matches.map((m) => m.id).join(',');
         if (matches.length > 0 && sig !== lastDupPrivacyRef.current) {
           lastDupPrivacyRef.current = sig;
-          pushPrivacyEvent(createDuplicateCheckActivity(matches.length));
+          pushPrivacyFlow('duplicate');
         } else if (matches.length === 0) {
           lastDupPrivacyRef.current = '';
         }
@@ -165,7 +162,7 @@ export default function NotesPage() {
     }, 500);
 
     return () => clearTimeout(duplicateDebounceTimer.current);
-  }, [formBody, formTags, vaultKey, pushPrivacyEvent]);
+  }, [formBody, formTags, vaultKey, triggerPrivacyFlow]);
 
   // 4. Semantic Search (debounced, whole docket)
   const searchMinSimilarity = user?.search_min_similarity ?? DEFAULT_SEARCH_MIN;
@@ -186,12 +183,11 @@ export default function NotesPage() {
         limit: 20,
       });
       setSearchResults(results);
-      const exactCount = results.filter((r) => r.exactMatch).length;
-      pushPrivacyEvent(createSearchActivity(trimmed, results.length, exactCount));
+      triggerPrivacyFlow('search');
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
     }
-  }, [searchMinSimilarity, vaultKey, pushPrivacyEvent]);
+  }, [searchMinSimilarity, vaultKey, triggerPrivacyFlow]);
 
   const scheduleSemanticSearch = (query) => {
     if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
@@ -219,7 +215,7 @@ export default function NotesPage() {
         sourceUrl: formSourceUrl,
       });
       showToast('Capture saved successfully');
-      pushPrivacyEvent(createSaveActivity(project));
+      triggerPrivacyFlow('save');
       setFormBody('');
       setFormTags('');
       setFormProject('');
@@ -290,7 +286,7 @@ export default function NotesPage() {
 
       if (res.ok) {
         showToast('Capture updated');
-        pushPrivacyEvent(createSaveActivity(editingCapture.project, { title: 'Capture updated' }));
+        triggerPrivacyFlow('save');
         setEditingCapture(null);
         loadCaptures();
         loadProjects();
@@ -462,7 +458,7 @@ export default function NotesPage() {
             </ul>
           </div>
 
-          <PrivacyTrustCard />
+          <PrivacyTrustCard activeFlow={privacyFlow} />
         </aside>
 
         {/* FEED COLUMN */}
@@ -851,8 +847,6 @@ export default function NotesPage() {
               )}
             </div>
           </div>
-
-          <PrivacyActivityPanel events={privacyEvents} />
         </div>
       </div>
 

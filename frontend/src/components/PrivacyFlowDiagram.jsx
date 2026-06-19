@@ -1,4 +1,12 @@
-/** Schematic only — no keys, ciphertext, or wire-format details. */
+/** Decorative hex — not real ciphertext. */
+const GLYPH = {
+  note: 'note',
+  blob: '7a3f…c2e1',
+  vec: '9b02…4d8a',
+  query: '1f8c…6e00',
+  match: '4d1a…b903',
+};
+
 export default function PrivacyFlowDiagram({ eventType, animationKey }) {
   const isSave = eventType === 'save';
   const isSearch = eventType === 'search' || eventType === 'duplicate';
@@ -13,35 +21,19 @@ export default function PrivacyFlowDiagram({ eventType, animationKey }) {
         <div className="privacy-flow-node-icon">
           <i className="fa-solid fa-laptop" />
         </div>
-        <span className="privacy-flow-node-label">Your device</span>
-        <div className="privacy-flow-device-items">
-          {isSave && (
-            <>
-              <span className="privacy-flow-chip chip-local">
-                <i className="fa-solid fa-file-lines" /> note
-              </span>
-              <span className="privacy-flow-chip chip-lock chip-animate-lock">
-                <i className="fa-solid fa-lock" /> encrypted
-              </span>
-              <span className="privacy-flow-chip chip-local">
-                <i className="fa-solid fa-fingerprint" /> embedding
-              </span>
-            </>
-          )}
-          {isSearch && (
-            <>
-              <span className="privacy-flow-chip chip-local">
-                <i className="fa-solid fa-magnifying-glass" /> query
-              </span>
-              <span className="privacy-flow-chip chip-local chip-animate-lock">
-                <i className="fa-solid fa-fingerprint" /> query vector
-              </span>
-              <span className="privacy-flow-chip chip-unlock chip-animate-unlock">
-                <i className="fa-solid fa-lock-open" /> decrypted here
-              </span>
-            </>
-          )}
-        </div>
+        <span className="privacy-flow-node-label">Device</span>
+        {isSave && (
+          <span className="privacy-flow-glyph chip-animate-lock">
+            <i className="fa-solid fa-lock" />
+            <span>{GLYPH.blob}</span>
+          </span>
+        )}
+        {isSearch && (
+          <span className="privacy-flow-glyph">
+            <i className="fa-solid fa-magnifying-glass" />
+            <span>{GLYPH.query}</span>
+          </span>
+        )}
       </div>
 
       <div className="privacy-flow-tunnel">
@@ -52,25 +44,17 @@ export default function PrivacyFlowDiagram({ eventType, animationKey }) {
         <div className="privacy-flow-track">
           {isSave && (
             <>
-              <span className="privacy-flow-packet packet-cipher">
-                <i className="fa-solid fa-lock" /> ciphertext
-              </span>
-              <span className="privacy-flow-packet packet-vector">
-                <i className="fa-solid fa-lock" /> vector
-              </span>
+              <span className="privacy-flow-packet packet-cipher">{GLYPH.blob}</span>
+              <span className="privacy-flow-packet packet-vector">{GLYPH.vec}</span>
             </>
           )}
           {isSearch && (
-            <span className="privacy-flow-packet packet-query">
-              <i className="fa-solid fa-lock" /> vector
-            </span>
+            <span className="privacy-flow-packet packet-query">{GLYPH.query}</span>
           )}
         </div>
         {isSearch && (
           <div className="privacy-flow-track privacy-flow-track-return">
-            <span className="privacy-flow-packet packet-return">
-              <i className="fa-solid fa-lock" /> matches
-            </span>
+            <span className="privacy-flow-packet packet-return">{GLYPH.match}</span>
           </div>
         )}
       </div>
@@ -80,24 +64,26 @@ export default function PrivacyFlowDiagram({ eventType, animationKey }) {
           <i className="fa-solid fa-server" />
         </div>
         <span className="privacy-flow-node-label">Server</span>
-        <div className="privacy-flow-server-store">
-          {isSave && (
-            <>
-              <span className="privacy-flow-chip chip-stored chip-animate-store">
-                <i className="fa-solid fa-lock" /> ciphertext at rest
-              </span>
-              <span className="privacy-flow-chip chip-stored chip-animate-store delay">
-                <i className="fa-solid fa-lock" /> vector at rest
-              </span>
-            </>
-          )}
-          {isSearch && (
-            <span className="privacy-flow-chip chip-stored">
-              <i className="fa-solid fa-chart-simple" /> rank only
-            </span>
-          )}
-        </div>
+        {isSave && (
+          <span className="privacy-flow-vault chip-animate-store">
+            <i className="fa-solid fa-lock" />
+            <span className="privacy-flow-blocks">████</span>
+          </span>
+        )}
+        {isSearch && (
+          <span className="privacy-flow-vault">
+            <i className="fa-solid fa-chart-simple" />
+            <span>rank</span>
+          </span>
+        )}
       </div>
+
+      {isSearch && (
+        <div className="privacy-flow-unlock chip-animate-unlock">
+          <i className="fa-solid fa-lock-open" />
+          <span>unlock here</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -107,8 +93,8 @@ export function PrivacyFlowIdle() {
     <div className="privacy-flow privacy-flow-idle" aria-hidden="true">
       <div className="privacy-flow-node privacy-flow-device">
         <div className="privacy-flow-node-icon"><i className="fa-solid fa-laptop" /></div>
-        <span className="privacy-flow-node-label">Your device</span>
-        <span className="privacy-flow-chip chip-local"><i className="fa-solid fa-lock" /> encrypt & embed</span>
+        <span className="privacy-flow-node-label">Device</span>
+        <span className="privacy-flow-glyph"><i className="fa-solid fa-lock" /><span>{GLYPH.blob}</span></span>
       </div>
       <div className="privacy-flow-tunnel privacy-flow-tunnel-idle">
         <div className="privacy-flow-tls"><i className="fa-solid fa-shield-halved" /><span>TLS</span></div>
@@ -117,7 +103,7 @@ export function PrivacyFlowIdle() {
       <div className="privacy-flow-node privacy-flow-server">
         <div className="privacy-flow-node-icon"><i className="fa-solid fa-server" /></div>
         <span className="privacy-flow-node-label">Server</span>
-        <span className="privacy-flow-chip chip-stored"><i className="fa-solid fa-lock" /> locked blobs</span>
+        <span className="privacy-flow-vault"><i className="fa-solid fa-lock" /><span className="privacy-flow-blocks">████</span></span>
       </div>
     </div>
   );
