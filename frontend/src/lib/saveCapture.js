@@ -1,4 +1,4 @@
-import { encryptCapturePayload } from './crypto';
+import { encryptCapturePayload, encryptEmbedding } from './crypto';
 import { embedPassage } from './embeddings';
 import { resolveProjectId } from './projects';
 import { fingerprintEmbeddingB64 } from './fingerprint';
@@ -40,6 +40,7 @@ export async function saveCapture(vaultKey, {
   });
   const projectId = await resolveProjectId(vaultKey, project);
   const fingerprint = fingerprintEmbeddingB64(embedding);
+  const encryptedVector = await encryptEmbedding(vaultKey, embedding);
 
   const res = await fetch('/api/captures', {
     method: 'POST',
@@ -47,6 +48,7 @@ export async function saveCapture(vaultKey, {
     body: JSON.stringify({
       ciphertext,
       fingerprint,
+      encrypted_vector: encryptedVector,
       project_id: projectId,
       type: cType,
     }),

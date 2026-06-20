@@ -68,6 +68,32 @@ export async function decryptCapturePayload(key, ciphertextB64) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
+/**
+ * Encrypts a real embedding for the (client-encrypted, vault-key-only)
+ * cache sent alongside the search fingerprint, so search candidates can be
+ * decrypted instead of re-run through the embedding model. Stores the raw
+ * Float32Array bytes rather than a JSON array of decimal text — ~4x smaller
+ * on the wire.
+ */
+export async function encryptEmbedding(key, embedding) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const floatBytes = new Float32Array(embedding);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, floatBytes.buffer);
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  return bytesToB64(combined);
+}
+
+export async function decryptEmbedding(key, blobB64) {
+  if (!blobB64) return null;
+  const combined = b64ToBytes(blobB64);
+  const iv = combined.slice(0, 12);
+  const data = combined.slice(12);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+  return Array.from(new Float32Array(plain));
+}
+
 export async function decryptCaptureRecord(key, record) {
   if (!record?.ciphertext) return record;
   const plain = await decryptCapturePayload(key, record.ciphertext);

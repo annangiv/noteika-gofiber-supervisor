@@ -173,14 +173,15 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Ciphertext  string `json:"ciphertext"`
-		Fingerprint string `json:"fingerprint"`
-		Title       string `json:"title"`
-		Body        string `json:"body"`
-		ProjectID   string `json:"project_id"`
-		SourceURL   string `json:"source_url"`
-		Tags        []string `json:"tags"`
-		Type        string `json:"type"`
+		Ciphertext      string   `json:"ciphertext"`
+		Fingerprint     string   `json:"fingerprint"`
+		EncryptedVector string   `json:"encrypted_vector"`
+		Title           string   `json:"title"`
+		Body            string   `json:"body"`
+		ProjectID       string   `json:"project_id"`
+		SourceURL       string   `json:"source_url"`
+		Tags            []string `json:"tags"`
+		Type            string   `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -218,6 +219,13 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 				return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
 			}
 			capture.Fingerprint = fp
+		}
+		if strings.TrimSpace(input.EncryptedVector) != "" {
+			ev, err := base64.StdEncoding.DecodeString(input.EncryptedVector)
+			if err != nil {
+				return c.Status(400).JSON(fiber.Map{"error": "Invalid encrypted_vector encoding"})
+			}
+			capture.EncryptedVector = ev
 		}
 		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
 			log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
@@ -338,14 +346,15 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Ciphertext  string `json:"ciphertext"`
-		Fingerprint string `json:"fingerprint"`
-		Title       string `json:"title"`
-		Body        string `json:"body"`
-		ProjectID   string `json:"project_id"`
-		SourceURL   string `json:"source_url"`
-		Tags        *[]string `json:"tags"`
-		Type        string `json:"type"`
+		Ciphertext      string    `json:"ciphertext"`
+		Fingerprint     string    `json:"fingerprint"`
+		EncryptedVector string    `json:"encrypted_vector"`
+		Title           string    `json:"title"`
+		Body            string    `json:"body"`
+		ProjectID       string    `json:"project_id"`
+		SourceURL       string    `json:"source_url"`
+		Tags            *[]string `json:"tags"`
+		Type            string    `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -374,6 +383,13 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 				return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
 			}
 			existing.Fingerprint = fp
+		}
+		if strings.TrimSpace(input.EncryptedVector) != "" {
+			ev, err := base64.StdEncoding.DecodeString(input.EncryptedVector)
+			if err != nil {
+				return c.Status(400).JSON(fiber.Map{"error": "Invalid encrypted_vector encoding"})
+			}
+			existing.EncryptedVector = ev
 		}
 		existing.UpdatedAt = time.Now().Unix()
 		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: existing}, 5*time.Second); err != nil {
@@ -699,8 +715,12 @@ func rankCapturesByFingerprint(queryFP []byte, captures []db.Capture, opts searc
 		dist := hammingDistance(queryFP, cap.Fingerprint)
 		similarity := float32(math.Cos(math.Pi * float64(dist) / 256))
 
+		capAPI := toCaptureAPI(cap)
+		if len(cap.EncryptedVector) > 0 {
+			capAPI.EncryptedVector = base64.StdEncoding.EncodeToString(cap.EncryptedVector)
+		}
 		results = append(results, SearchResult{
-			Capture:    toCaptureAPI(cap),
+			Capture:    capAPI,
 			Similarity: similarity,
 		})
 	}

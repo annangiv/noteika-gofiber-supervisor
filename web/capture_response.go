@@ -7,18 +7,19 @@ import (
 )
 
 type captureAPI struct {
-	ID         string   `json:"id"`
-	UserID     string   `json:"user_id,omitempty"`
-	ProjectID  string   `json:"project_id"`
-	Type       string   `json:"type"`
-	Ciphertext string   `json:"ciphertext,omitempty"`
-	Title      string   `json:"title,omitempty"`
-	Body       string   `json:"body,omitempty"`
-	SourceURL  string   `json:"source_url,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	CreatedAt  int64    `json:"created_at"`
-	UpdatedAt  int64    `json:"updated_at"`
-	DeletedAt  int64    `json:"deleted_at"`
+	ID              string   `json:"id"`
+	UserID          string   `json:"user_id,omitempty"`
+	ProjectID       string   `json:"project_id"`
+	Type            string   `json:"type"`
+	Ciphertext      string   `json:"ciphertext,omitempty"`
+	EncryptedVector string   `json:"encrypted_vector,omitempty"`
+	Title           string   `json:"title,omitempty"`
+	Body            string   `json:"body,omitempty"`
+	SourceURL       string   `json:"source_url,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	CreatedAt       int64    `json:"created_at"`
+	UpdatedAt       int64    `json:"updated_at"`
+	DeletedAt       int64    `json:"deleted_at"`
 }
 
 func toCaptureAPI(c db.Capture) captureAPI {

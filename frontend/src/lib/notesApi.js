@@ -1,6 +1,6 @@
 import { embedQuery, embedPassage } from './embeddings';
-import { decryptCaptureList, decryptCaptureRecord } from './crypto';
-import { buildCaptureEmbeddingText, formatTagsInput } from './captureContent';
+import { decryptCaptureList, decryptCaptureRecord, decryptEmbedding } from './crypto';
+import { buildCaptureEmbeddingText } from './captureContent';
 import { fingerprintEmbeddingB64, cosineSimilarity } from './fingerprint';
 
 export const DEFAULT_SEARCH_MIN = 0.70;
@@ -134,12 +134,14 @@ export async function searchCapturesForUser(vaultKey, query, {
 /**
  * Server only ever sees a one-way-ish binarized fingerprint, so it can only
  * narrow candidates by approximate (Hamming-distance) similarity — it never
- * holds a real embedding. This decrypts the returned candidates, re-embeds
- * their real text locally (the only place a real embedding ever exists for
- * an existing note), and re-ranks by true cosine similarity for the exact
- * final score. minSimilarity is applied here, on the exact score — not
- * server-side on the approximate one, where LSH noise could wrongly drop a
- * true near-match before it's ever verified.
+ * holds a real embedding. Alongside the fingerprint, each candidate also
+ * carries its real embedding encrypted with the vault key (never a
+ * server-held key, same guarantee as the note ciphertext); this decrypts
+ * that instead of re-running the embedding model on every candidate, then
+ * re-ranks by true cosine similarity for the exact final score.
+ * minSimilarity is applied here, on the exact score — not server-side on
+ * the approximate one, where LSH noise could wrongly drop a true
+ * near-match before it's ever verified.
  */
 export async function searchCaptures(vaultKey, query, { projectId = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
   let embedding = queryEmbedding;
@@ -166,8 +168,7 @@ export async function searchCaptures(vaultKey, query, { projectId = '', minSimil
 
   const rescored = await Promise.all(candidates.map(async (item) => {
     const capture = await decryptCaptureRecord(vaultKey, item.capture);
-    const candidateText = buildCaptureEmbeddingText(capture.body, formatTagsInput(capture.tags));
-    const candidateEmbedding = await embedPassage(candidateText);
+    const candidateEmbedding = await decryptEmbedding(vaultKey, item.capture.encrypted_vector);
     return { capture, similarity: cosineSimilarity(embedding, candidateEmbedding) };
   }));
 

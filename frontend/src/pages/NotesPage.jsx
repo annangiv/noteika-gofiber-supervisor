@@ -13,7 +13,7 @@ import {
   mergeTags, parseHashtags, buildCaptureEmbeddingText,
 } from '../lib/captureContent';
 import { embedPassage } from '../lib/embeddings';
-import { encryptCapturePayload } from '../lib/crypto';
+import { encryptCapturePayload, encryptEmbedding } from '../lib/crypto';
 import { fingerprintEmbeddingB64 } from '../lib/fingerprint';
 import PrivacyTrustCard from '../components/PrivacyPanel';
 import { privacyFlowEvent } from '../lib/privacyActivity';
@@ -284,6 +284,7 @@ export default function NotesPage() {
       });
       const projectId = await resolveProjectId(vaultKey, editingCapture.project);
       const fingerprint = fingerprintEmbeddingB64(embedding);
+      const encryptedVector = await encryptEmbedding(vaultKey, embedding);
 
       const res = await fetch(`/api/captures/${editingCapture.id}`, {
         method: 'PATCH',
@@ -291,6 +292,7 @@ export default function NotesPage() {
         body: JSON.stringify({
           ciphertext,
           fingerprint,
+          encrypted_vector: encryptedVector,
           project_id: projectId,
           type: cType,
         }),

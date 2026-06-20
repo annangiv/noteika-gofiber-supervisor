@@ -51,6 +51,11 @@ type Capture struct {
 	Tags      []string `json:"tags,omitempty"`
 	Type      string `json:"type"` // "note", "link", "qa", "code"
 	Fingerprint []byte  `json:"fingerprint,omitempty"`
+	// EncryptedVector is the real embedding, AES-GCM-encrypted client-side with
+	// the vault key (never a server-held key). Sent back only for search
+	// candidates so the client can decrypt instead of re-running the embedding
+	// model on every result.
+	EncryptedVector []byte `json:"encrypted_vector,omitempty"`
 	CreatedAt int64     `json:"created_at"`
 	UpdatedAt int64     `json:"updated_at"`
 	DeletedAt int64     `json:"deleted_at"`
