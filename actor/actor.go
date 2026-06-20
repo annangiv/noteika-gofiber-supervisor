@@ -43,6 +43,7 @@ const (
 	TypeListCaptures        = "ListCaptures"
 	TypeDeleteCapture       = "DeleteCapture"
 	TypeListProjects        = "ListProjects"
+	TypeSaveProject         = "SaveProject"
 	TypeDebugCrash          = "DebugCrash"
 )
 
@@ -113,4 +114,8 @@ type DeleteCapturePayload struct {
 
 type ListProjectsPayload struct {
 	UserID string
+}
+
+type SaveProjectPayload struct {
+	Project db.Project
 }

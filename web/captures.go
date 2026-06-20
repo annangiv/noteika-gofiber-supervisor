@@ -214,7 +214,7 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		Embedding  []float32 `json:"embedding"`
 		Title      string    `json:"title"`
 		Body       string    `json:"body"`
-		Project    string    `json:"project"`
+		ProjectID  string    `json:"project_id"`
 		SourceURL  string    `json:"source_url"`
 		Tags       []string  `json:"tags"`
 		Type       string    `json:"type"`
@@ -224,9 +224,9 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	project := strings.TrimSpace(input.Project)
-	if project == "" {
-		project = "Inbox"
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID == "" {
+		projectID = "inbox"
 	}
 
 	now := time.Now().Unix()
@@ -243,7 +243,7 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 		capture := db.Capture{
 			ID:         uuid.New().String(),
 			UserID:     userID,
-			Project:    project,
+			ProjectID:  projectID,
 			Ciphertext: ct,
 			Type:       cType,
 			CreatedAt:  now,
@@ -282,7 +282,7 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	capture := db.Capture{
 		ID:              uuid.New().String(),
 		UserID:          userID,
-		Project:         project,
+		ProjectID:       projectID,
 		Title:           title,
 		Body:            input.Body,
 		SourceURL:       input.SourceURL,
@@ -308,7 +308,7 @@ func (h *CapturesHandler) List(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	projectFilter := c.Query("project")
+	projectFilter := c.Query("project_id")
 
 	payload := actor.ListCapturesPayload{
 		UserID:        userID,
@@ -383,7 +383,7 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		Embedding  []float32 `json:"embedding"`
 		Title      string    `json:"title"`
 		Body       string    `json:"body"`
-		Project    string    `json:"project"`
+		ProjectID  string    `json:"project_id"`
 		SourceURL  string    `json:"source_url"`
 		Tags       *[]string `json:"tags"`
 		Type       string    `json:"type"`
@@ -406,8 +406,8 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		if input.Type != "" {
 			existing.Type = strings.TrimSpace(input.Type)
 		}
-		if input.Project != "" {
-			existing.Project = strings.TrimSpace(input.Project)
+		if input.ProjectID != "" {
+			existing.ProjectID = strings.TrimSpace(input.ProjectID)
 		}
 		if len(input.Embedding) > 0 {
 			if err := prepareCaptureForStorage(&existing, input.Embedding); err != nil {
@@ -436,10 +436,10 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		existing.Title = generateAutoTitle(existing.Body)
 	}
 
-	if input.Project != "" {
-		existing.Project = strings.TrimSpace(input.Project)
+	if input.ProjectID != "" {
+		existing.ProjectID = strings.TrimSpace(input.ProjectID)
 	}
-	
+
 	existing.SourceURL = input.SourceURL
 
 	tagsChanged := false
@@ -585,7 +585,14 @@ func (h *CapturesHandler) EmptyTrash(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Trash emptied successfully", "count": deletedCount})
 }
 
-// List user's unique projects
+type projectAPI struct {
+	ID         string `json:"id"`
+	Ciphertext string `json:"ciphertext"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+// List user's encrypted projects (the "inbox" default is a frontend-only sentinel,
+// never stored here).
 func (h *CapturesHandler) ListProjects(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
@@ -598,12 +605,64 @@ func (h *CapturesHandler) ListProjects(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to retrieve projects"})
 	}
 
-	projects, ok := res.([]string)
-	if !ok || projects == nil {
-		projects = []string{"Inbox"}
+	projects, ok := res.([]db.Project)
+	if !ok {
+		projects = []db.Project{}
 	}
 
-	return c.JSON(projects)
+	out := make([]projectAPI, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, projectAPI{
+			ID:         p.ID,
+			Ciphertext: base64.StdEncoding.EncodeToString(p.Ciphertext),
+			CreatedAt:  p.CreatedAt,
+		})
+	}
+
+	return c.JSON(out)
+}
+
+// CreateProject saves a client-encrypted project name under a client-generated ID.
+func (h *CapturesHandler) CreateProject(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var input struct {
+		ID         string `json:"id"`
+		Ciphertext string `json:"ciphertext"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Project id is required"})
+	}
+
+	ct, err := base64.StdEncoding.DecodeString(input.Ciphertext)
+	if err != nil || len(ct) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid ciphertext encoding"})
+	}
+
+	project := db.Project{
+		ID:         id,
+		UserID:     userID,
+		Ciphertext: ct,
+		CreatedAt:  time.Now().Unix(),
+	}
+	if _, err := h.gateway.Send(actor.TypeSaveProject, actor.SaveProjectPayload{Project: project}, 5*time.Second); err != nil {
+		log.Printf("[CapturesHandler] SaveProject failed: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to save project"})
+	}
+
+	return c.Status(201).JSON(projectAPI{
+		ID:         project.ID,
+		Ciphertext: input.Ciphertext,
+		CreatedAt:  project.CreatedAt,
+	})
 }
 
 // ListTags returns unique tags across the user's captures (for autocomplete).
@@ -653,7 +712,7 @@ type SearchResult struct {
 type searchRequest struct {
 	Query           string    `json:"query"`
 	QueryEmbedding  []float32 `json:"query_embedding"`
-	Project         string    `json:"project"`
+	ProjectID       string    `json:"project_id"`
 	MinSimilarity   *float32  `json:"min_similarity"`
 	Limit           int       `json:"limit"`
 	ExcludeID       string    `json:"exclude_id"`
@@ -733,7 +792,7 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 		}
 	}
 
-	projectFilter := strings.TrimSpace(input.Project)
+	projectFilter := strings.TrimSpace(input.ProjectID)
 	listPayload := actor.ListCapturesPayload{UserID: userID, ProjectFilter: projectFilter}
 	res, err := h.gateway.Send(actor.TypeListCaptures, listPayload, 5*time.Second)
 	if err != nil {

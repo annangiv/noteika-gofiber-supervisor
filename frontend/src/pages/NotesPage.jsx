@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   SIMILARITY, decryptCaptureList, findDuplicateMatches, formatRelativeTime, DEFAULT_SEARCH_MIN,
@@ -7,6 +7,7 @@ import {
 import { useVault } from '../context/VaultContext';
 import VaultGate from '../components/VaultGate';
 import { saveCapture } from '../lib/saveCapture';
+import { fetchProjects, resolveProjectId } from '../lib/projects';
 import {
   generateAutoTitle, classifyContentType, parseTagsInput, formatTagsInput,
   mergeTags, parseHashtags, buildCaptureEmbeddingText,
@@ -26,7 +27,7 @@ export default function NotesPage() {
   // App data states
   const [captures, setCaptures] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState('Inbox');
+  const [selectedProject, setSelectedProject] = useState('inbox');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -70,6 +71,14 @@ export default function NotesPage() {
     }, 4000);
   };
 
+  const projectNameById = useMemo(() => {
+    const map = { inbox: 'Inbox' };
+    for (const p of projects) map[p.id] = p.name;
+    return map;
+  }, [projects]);
+  const nameForProjectId = (id) => projectNameById[id] ?? id;
+  const withProjectName = (cap) => (cap ? { ...cap, project: nameForProjectId(cap.project_id) } : cap);
+
   // 1. Authenticate on mount
   useEffect(() => {
     async function checkAuth() {
@@ -93,12 +102,9 @@ export default function NotesPage() {
 
   // 2. Fetch Projects and Captures when authenticated
   const loadProjects = async () => {
+    if (!vaultKey) return;
     try {
-      const res = await fetch('/api/projects');
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(Array.isArray(data) ? data : []);
-      }
+      setProjects(await fetchProjects(vaultKey));
     } catch (err) {
       console.error('Failed to load projects:', err);
     }
@@ -109,15 +115,16 @@ export default function NotesPage() {
     try {
       let url = '/api/captures';
       if (selectedProject) {
-        url += `?project=${encodeURIComponent(selectedProject)}`;
+        url += `?project_id=${encodeURIComponent(selectedProject)}`;
       }
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         const decrypted = await decryptCaptureList(vaultKey, Array.isArray(data) ? data : []);
-        setCaptures(decrypted);
+        const withNames = decrypted.map(withProjectName);
+        setCaptures(withNames);
         setKnownTags(
-          [...new Set(decrypted.flatMap((c) => (c.tags ?? []).map((t) => t.toLowerCase())))].sort(),
+          [...new Set(withNames.flatMap((c) => (c.tags ?? []).map((t) => t.toLowerCase())))].sort(),
         );
       }
     } catch (err) {
@@ -135,6 +142,12 @@ export default function NotesPage() {
     }
   }, [user, selectedProject, vaultKey]);
 
+  // Check entire docket for duplicates (used both proactively and before saving)
+  const findSimilarInDocket = async (body) => {
+    const matches = await findDuplicateMatches(body, formTags, vaultKey, { limit: 5 });
+    return matches.map((m) => ({ ...m, capture: withProjectName(m.capture) }));
+  };
+
   // 3. Proactive duplicate warning while typing (whole docket, not project-scoped)
   useEffect(() => {
     const trimmed = formBody.trim();
@@ -147,7 +160,7 @@ export default function NotesPage() {
 
     duplicateDebounceTimer.current = setTimeout(async () => {
       try {
-        const matches = await findDuplicateMatches(trimmed, formTags, vaultKey, { limit: 5 });
+        const matches = await findSimilarInDocket(trimmed);
         setDuplicateWarning(matches);
         const sig = matches.map((m) => m.id).join(',');
         if (matches.length > 0 && sig !== lastDupPrivacyRef.current) {
@@ -182,7 +195,7 @@ export default function NotesPage() {
         minSimilarity: searchMinSimilarity,
         limit: 20,
       });
-      setSearchResults(results);
+      setSearchResults(results.map((r) => ({ ...r, capture: withProjectName(r.capture) })));
       triggerPrivacyFlow('search');
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
@@ -198,14 +211,10 @@ export default function NotesPage() {
     searchDebounceTimer.current = setTimeout(() => runSemanticSearch(query), 400);
   };
 
-  // Check entire docket for duplicates before saving
-  const findSimilarInDocket = async (body) =>
-    findDuplicateMatches(body, formTags, vaultKey, { limit: 5 });
-
   const performSave = async () => {
     if (!vaultKey) return;
     setIsSaving(true);
-    const project = formProject || selectedProject || 'Inbox';
+    const project = formProject || nameForProjectId(selectedProject) || 'Inbox';
 
     try {
       await saveCapture(vaultKey, {
@@ -272,6 +281,7 @@ export default function NotesPage() {
         source_url: editingCapture.source_url ?? '',
         tags,
       });
+      const projectId = await resolveProjectId(vaultKey, editingCapture.project);
 
       const res = await fetch(`/api/captures/${editingCapture.id}`, {
         method: 'PATCH',
@@ -279,7 +289,7 @@ export default function NotesPage() {
         body: JSON.stringify({
           ciphertext,
           embedding,
-          project: editingCapture.project,
+          project_id: projectId,
           type: cType,
         }),
       });
@@ -398,7 +408,7 @@ export default function NotesPage() {
             <span className="brand-mark">n</span>
             <span className="brand-name">noteika</span>
           </Link>
-          <button type="button" className="notes-project-btn" onClick={() => setSelectedProject('Inbox')}>
+          <button type="button" className="notes-project-btn" onClick={() => setSelectedProject('inbox')}>
             Notes
           </button>
           <span className="badge badge-ready">
@@ -436,12 +446,12 @@ export default function NotesPage() {
             <ul className="project-list" id="project-list">
               {projects.map((proj) => (
                 <li
-                  key={proj}
-                  className={selectedProject === proj ? 'active' : ''}
-                  onClick={() => setSelectedProject(proj)}
+                  key={proj.id}
+                  className={selectedProject === proj.id ? 'active' : ''}
+                  onClick={() => setSelectedProject(proj.id)}
                 >
                   <span className="proj-name">
-                    <i className="fa-regular fa-folder"></i> {proj}
+                    <i className="fa-regular fa-folder"></i> {proj.name}
                   </span>
                 </li>
               ))}
@@ -566,7 +576,7 @@ export default function NotesPage() {
                       />
                       <datalist id="project-suggestions">
                         {projects.map((p) => (
-                          <option key={p} value={p} />
+                          <option key={p.id} value={p.name} />
                         ))}
                       </datalist>
                     </div>
@@ -623,7 +633,7 @@ export default function NotesPage() {
           <div className="captures-section">
             <div className="section-header">
               <h2 id="feed-title">
-                <i className="fa-solid fa-stream"></i> {isSearching ? 'Search Results' : `${selectedProject} Feed`}
+                <i className="fa-solid fa-stream"></i> {isSearching ? 'Search Results' : `${nameForProjectId(selectedProject)} Feed`}
               </h2>
               <span className="captures-count" id="captures-count">
                 {displayedItems.length} item{displayedItems.length !== 1 ? 's' : ''}

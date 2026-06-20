@@ -138,6 +138,11 @@ func (a *VaultActor) handleMessage(msg Message) {
 		resp.Data = projects
 		resp.Err = err
 
+	case TypeSaveProject:
+		payload := msg.Payload.(SaveProjectPayload)
+		err := a.repo.SaveProject(payload.Project)
+		resp.Err = err
+
 	default:
 		resp.Err = fmt.Errorf("unknown message type: %s", msg.Type)
 	}

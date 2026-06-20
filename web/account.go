@@ -24,7 +24,7 @@ func NewAccountHandler(gateway *actor.ActorGateway) *AccountHandler {
 
 type exportCapture struct {
 	ID         string   `json:"id"`
-	Project    string   `json:"project"`
+	ProjectID  string   `json:"project_id"`
 	Ciphertext string   `json:"ciphertext,omitempty"`
 	Title      string   `json:"title,omitempty"`
 	Body       string   `json:"body,omitempty"`
@@ -35,9 +35,16 @@ type exportCapture struct {
 	UpdatedAt  int64    `json:"updated_at"`
 }
 
+type exportProject struct {
+	ID         string `json:"id"`
+	Ciphertext string `json:"ciphertext"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
 type exportPayload struct {
 	ExportedAt string          `json:"exported_at"`
 	User       exportUser      `json:"user"`
+	Projects   []exportProject `json:"projects"`
 	Captures   []exportCapture `json:"captures"`
 }
 
@@ -86,7 +93,7 @@ func (h *AccountHandler) Export(c *fiber.Ctx) error {
 	for _, cap := range captures {
 		exp := exportCapture{
 			ID:        cap.ID,
-			Project:   cap.Project,
+			ProjectID: cap.ProjectID,
 			Type:      cap.Type,
 			CreatedAt: cap.CreatedAt,
 			UpdatedAt: cap.UpdatedAt,
@@ -102,6 +109,23 @@ func (h *AccountHandler) Export(c *fiber.Ctx) error {
 		exported = append(exported, exp)
 	}
 
+	projectsRes, err := h.gateway.Send(actor.TypeListProjects, actor.ListProjectsPayload{UserID: userID}, 5*time.Second)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to export projects"})
+	}
+	projects, ok := projectsRes.([]db.Project)
+	if !ok {
+		projects = []db.Project{}
+	}
+	exportedProjects := make([]exportProject, 0, len(projects))
+	for _, p := range projects {
+		exportedProjects = append(exportedProjects, exportProject{
+			ID:         p.ID,
+			Ciphertext: base64.StdEncoding.EncodeToString(p.Ciphertext),
+			CreatedAt:  p.CreatedAt,
+		})
+	}
+
 	payload := exportPayload{
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		User: exportUser{
@@ -110,6 +134,7 @@ func (h *AccountHandler) Export(c *fiber.Ctx) error {
 			Tier:      user.Tier,
 			CreatedAt: user.CreatedAt,
 		},
+		Projects: exportedProjects,
 		Captures: exported,
 	}
 

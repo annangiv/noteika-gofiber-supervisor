@@ -29,7 +29,7 @@ export default function PrivacyTrustCard({ activeFlow }) {
           <span className="privacy-trust-icon plain"><i className="fa-solid fa-tag" /></span>
           <div>
             <strong>Plain metadata only</strong>
-            <p>Project name, save date, and account info — not note content.</p>
+            <p>Save date and account info — not note content or project names.</p>
           </div>
         </li>
       </ul>

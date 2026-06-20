@@ -42,7 +42,7 @@ type Session struct {
 type Capture struct {
 	ID        string `json:"id"`
 	UserID    string `json:"user_id"`
-	Project   string `json:"project"`
+	ProjectID string `json:"project_id"`
 	Ciphertext []byte `json:"ciphertext,omitempty"`
 	// Legacy plaintext fields (pre-E2E captures only).
 	Title     string `json:"title,omitempty"`
@@ -59,6 +59,15 @@ type Capture struct {
 
 func (c Capture) IsEncrypted() bool {
 	return len(c.Ciphertext) > 0
+}
+
+// Project holds an encrypted project display name; ProjectID on Capture references it.
+// The literal sentinel "inbox" is the default project and is never stored here.
+type Project struct {
+	ID         string `json:"id"`
+	UserID     string `json:"user_id"`
+	Ciphertext []byte `json:"ciphertext"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 type BadgerRepo struct {
@@ -243,18 +252,24 @@ func (r *BadgerRepo) DeleteUser(id string) error {
 	return r.DeleteUserAndData(id)
 }
 
-// DeleteUserAndData removes the user record, email index, and all captures.
+// DeleteUserAndData removes the user record, email index, and all captures/projects.
 func (r *BadgerRepo) DeleteUserAndData(userID string) error {
 	return r.db.Update(func(txn *badger.Txn) error {
-		capturePrefix := []byte(fmt.Sprintf("capture:%s:", userID))
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Seek(capturePrefix); it.ValidForPrefix(capturePrefix); it.Next() {
-			if err := txn.Delete(it.Item().KeyCopy(nil)); err != nil {
-				return err
+
+		for _, prefix := range [][]byte{
+			[]byte(fmt.Sprintf("capture:%s:", userID)),
+			[]byte(fmt.Sprintf("project:%s:", userID)),
+		} {
+			it := txn.NewIterator(opts)
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				if err := txn.Delete(it.Item().KeyCopy(nil)); err != nil {
+					it.Close()
+					return err
+				}
 			}
+			it.Close()
 		}
 
 		userKey := []byte(fmt.Sprintf("user:id:%s", userID))
@@ -479,7 +494,7 @@ func (r *BadgerRepo) ListCaptures(userID string, projectFilter string) ([]Captur
 						return nil
 					}
 					// Filter by project if parameter is specified
-					if projectFilter != "" && !strings.EqualFold(capture.Project, projectFilter) {
+					if projectFilter != "" && !strings.EqualFold(capture.ProjectID, projectFilter) {
 						return nil
 					}
 				}
@@ -507,12 +522,24 @@ func (r *BadgerRepo) DeleteCapture(userID string, id string) error {
 	})
 }
 
-func (r *BadgerRepo) ListProjects(userID string) ([]string, error) {
-	projectsMap := make(map[string]bool)
-	projectsMap["Inbox"] = true // Always ensure Inbox exists
+func (r *BadgerRepo) SaveProject(project Project) error {
+	return r.db.Update(func(txn *badger.Txn) error {
+		projectBytes, err := json.Marshal(project)
+		if err != nil {
+			return err
+		}
 
+		projectKey := []byte(fmt.Sprintf("project:%s:%s", project.UserID, project.ID))
+		return txn.Set(projectKey, projectBytes)
+	})
+}
+
+// ListProjects scans the small per-user projects collection (one row per project,
+// not per capture). The "inbox" sentinel default is never stored here.
+func (r *BadgerRepo) ListProjects(userID string) ([]Project, error) {
+	var projects []Project
 	err := r.db.View(func(txn *badger.Txn) error {
-		prefix := []byte(fmt.Sprintf("capture:%s:", userID))
+		prefix := []byte(fmt.Sprintf("project:%s:", userID))
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
 
@@ -522,13 +549,11 @@ func (r *BadgerRepo) ListProjects(userID string) ([]string, error) {
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			err := item.Value(func(val []byte) error {
-				var capture Capture
-				if err := json.Unmarshal(val, &capture); err != nil {
+				var project Project
+				if err := json.Unmarshal(val, &project); err != nil {
 					return err
 				}
-				if capture.DeletedAt == 0 && capture.Project != "" {
-					projectsMap[capture.Project] = true
-				}
+				projects = append(projects, project)
 				return nil
 			})
 			if err != nil {
@@ -541,10 +566,6 @@ func (r *BadgerRepo) ListProjects(userID string) ([]string, error) {
 		return nil, err
 	}
 
-	var projects []string
-	for p := range projectsMap {
-		projects = append(projects, p)
-	}
-	sort.Strings(projects)
+	sort.Slice(projects, func(i, j int) bool { return projects[i].CreatedAt < projects[j].CreatedAt })
 	return projects, nil
 }

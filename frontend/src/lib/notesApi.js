@@ -141,7 +141,7 @@ export async function searchCapturesForUser(vaultKey, query, {
   return mergeHybridSearchResults(semantic, fts, trimmed, { limit });
 }
 
-export async function searchCaptures(query, { project = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
+export async function searchCaptures(query, { projectId = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
   let embedding = queryEmbedding;
   if (!embedding?.length && query?.trim()) {
     embedding = asPassage
@@ -155,7 +155,7 @@ export async function searchCaptures(query, { project = '', minSimilarity = DEFA
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       query_embedding: embedding,
-      project,
+      project_id: projectId,
       min_similarity: minSimilarity,
       limit,
       exclude_id: excludeId,

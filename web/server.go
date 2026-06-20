@@ -102,6 +102,7 @@ func (s *Server) Start(port string) error {
 	api.Post("/captures/empty-trash", capturesHandler.EmptyTrash)
 	api.Post("/captures/restore/:id", capturesHandler.Restore)
 	api.Get("/projects", capturesHandler.ListProjects)
+	api.Post("/projects", capturesHandler.CreateProject)
 	api.Get("/tags", capturesHandler.ListTags)
 	api.Get("/vault/salt", vaultHandler.GetSalt)
 	api.Post("/captures/search", capturesHandler.Search)

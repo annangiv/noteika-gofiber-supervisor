@@ -9,7 +9,7 @@ import (
 type captureAPI struct {
 	ID         string   `json:"id"`
 	UserID     string   `json:"user_id,omitempty"`
-	Project    string   `json:"project"`
+	ProjectID  string   `json:"project_id"`
 	Type       string   `json:"type"`
 	Ciphertext string   `json:"ciphertext,omitempty"`
 	Title      string   `json:"title,omitempty"`
@@ -24,7 +24,7 @@ type captureAPI struct {
 func toCaptureAPI(c db.Capture) captureAPI {
 	out := captureAPI{
 		ID:        c.ID,
-		Project:   c.Project,
+		ProjectID: c.ProjectID,
 		Type:      c.Type,
 		CreatedAt: c.CreatedAt,
 		UpdatedAt: c.UpdatedAt,

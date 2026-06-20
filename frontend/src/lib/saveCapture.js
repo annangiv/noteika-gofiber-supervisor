@@ -1,5 +1,6 @@
 import { encryptCapturePayload } from './crypto';
 import { embedPassage } from './embeddings';
+import { resolveProjectId } from './projects';
 import {
   generateAutoTitle,
   classifyContentType,
@@ -36,6 +37,7 @@ export async function saveCapture(vaultKey, {
     source_url: sourceUrl,
     tags: mergedTags,
   });
+  const projectId = await resolveProjectId(vaultKey, project);
 
   const res = await fetch('/api/captures', {
     method: 'POST',
@@ -43,7 +45,7 @@ export async function saveCapture(vaultKey, {
     body: JSON.stringify({
       ciphertext,
       embedding,
-      project,
+      project_id: projectId,
       type: cType,
     }),
   });
