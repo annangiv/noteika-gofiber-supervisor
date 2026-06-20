@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: noteika-go-app
+    networks:
+      - noteika-network
+      - proxy_net
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+networks:
+  noteika-network:
+    driver: bridge
+    name: noteika-net

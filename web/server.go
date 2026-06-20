@@ -1,12 +1,8 @@
 package web
 
 import (
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -80,124 +76,6 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/account", pageHandler)
 	s.app.Get("/dev/import", pageHandler)
 	s.app.Get("/dashboard", pageHandler) // legacy redirect target
-
-	// ==========================================
-	// NATIVE FIBER MOCK OAUTH ENDPOINTS
-	// ==========================================
-	s.app.Get("/oauth/mock/authorize", func(c *fiber.Ctx) error {
-		provider := c.Query("provider")
-		state := c.Query("state")
-
-		html := fmt.Sprintf(`
-		<!DOCTYPE html>
-		<html>
-		<head>
-			<title>Developer Mock Authorization</title>
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<style>
-				body {
-					font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-					background-color: #0d1117;
-					color: #c9d1d9;
-					display: flex;
-					justify-content: center;
-					align-items: center;
-					height: 100vh;
-					margin: 0;
-				}
-				.card {
-					background-color: #161b22;
-					border: 1px solid #30363d;
-					border-radius: 12px;
-					padding: 32px;
-					width: 360px;
-					box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-				}
-				h2 { margin-top: 0; color: #58a6ff; font-weight: 500; }
-				label { display: block; margin: 16px 0 6px; font-size: 14px; color: #8b949e; }
-				input {
-					width: 100%%;
-					padding: 10px;
-					background-color: #0d1117;
-					border: 1px solid #30363d;
-					border-radius: 6px;
-					color: #fff;
-					font-size: 14px;
-					box-sizing: border-box;
-				}
-				input:focus { border-color: #58a6ff; outline: none; }
-				button {
-					width: 100%%;
-					padding: 12px;
-					background-color: #238636;
-					color: white;
-					border: none;
-					border-radius: 6px;
-					font-size: 16px;
-					font-weight: 600;
-					margin-top: 24px;
-					cursor: pointer;
-					transition: background 0.2s;
-				}
-				button:hover { background-color: #2ea44f; }
-				.info { font-size: 12px; color: #8b949e; margin-top: 16px; text-align: center; line-height: 1.4; }
-			</style>
-		</head>
-		<body>
-			<div class="card">
-				<h2>Mock OAuth Login</h2>
-				<div style="font-size: 14px; color: #8b949e; margin-bottom: 20px;">
-					Simulating login for <strong>%s</strong>
-				</div>
-				<form action="/oauth/mock/submit" method="POST">
-					<input type="hidden" name="provider" value="%s">
-					<input type="hidden" name="state" value="%s">
-
-					<label for="name">Full Name</label>
-					<input type="text" id="name" name="name" value="Developer User" required>
-
-					<label for="email">Email Address</label>
-					<input type="email" id="email" name="email" value="dev-user@example.com" required>
-
-					<button type="submit">Authorize Developer App</button>
-				</form>
-				<div class="info">
-					This bypasses external APIs and generates a secure local session. Use any test account name or email.
-				</div>
-			</div>
-		</body>
-		</html>
-		`, provider, provider, state)
-
-		c.Set("Content-Type", "text/html; charset=utf-8")
-		return c.SendString(html)
-	})
-
-	s.app.Post("/oauth/mock/submit", func(c *fiber.Ctx) error {
-		provider := c.FormValue("provider")
-		state := c.FormValue("state")
-		name := c.FormValue("name")
-		email := c.FormValue("email")
-
-		if name == "" || email == "" {
-			return c.Status(400).SendString("Name and Email are required")
-		}
-
-		profile := struct {
-			Email string `json:"email"`
-			Name  string `json:"name"`
-		}{
-			Email: email,
-			Name:  name,
-		}
-
-		jsonBytes, _ := json.Marshal(profile)
-		encodedPayload := base64.URLEncoding.EncodeToString(jsonBytes)
-		mockCode := fmt.Sprintf("mock_%s", encodedPayload)
-
-		callbackURL := fmt.Sprintf("/auth/%s/callback?code=%s&state=%s", provider, mockCode, url.QueryEscape(state))
-		return c.Redirect(callbackURL)
-	})
 
 	// Auth trigger and callback
 	s.app.Get("/auth/login/:provider", authHandler.Login)

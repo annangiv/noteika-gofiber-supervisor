@@ -2,12 +2,10 @@ package web
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -28,19 +26,8 @@ type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 }
 
-// Check if provider is configured for mock mode
-func IsMockProvider(provider string) bool {
-	clientID := os.Getenv(strings.ToUpper(provider) + "_OAUTH_CLIENT_ID")
-	return clientID == "" || clientID == "mock"
-}
-
-// GetAuthURL generates authorization URL. For mock, redirects to local mock endpoint.
+// GetAuthURL generates authorization URL.
 func GetAuthURL(provider string, state string) (string, error) {
-	if IsMockProvider(provider) {
-		// Redirect to mock auth URL
-		return fmt.Sprintf("/oauth/mock/authorize?provider=%s&state=%s", provider, state), nil
-	}
-
 	config, err := getOauthConfig(provider)
 	if err != nil {
 		return "", err
@@ -51,10 +38,6 @@ func GetAuthURL(provider string, state string) (string, error) {
 
 // ExchangeCodeAndFetchProfile exchanges the authorization code for a profile.
 func ExchangeCodeAndFetchProfile(provider string, code string, redirectURI string) (OAuthUserProfile, error) {
-	if IsMockProvider(provider) || strings.HasPrefix(code, "mock_") {
-		return exchangeMockCode(provider, code)
-	}
-
 	config, err := getOauthConfig(provider)
 	if err != nil {
 		return OAuthUserProfile{}, err
@@ -108,37 +91,6 @@ func getOauthConfig(provider string) (*oauth2.Config, error) {
 		RedirectURL:  redirectURL,
 		Endpoint:     endpoint,
 		Scopes:       scopes,
-	}, nil
-}
-
-// Stateless mock login: authorization code is base64(JSON(profile))
-func exchangeMockCode(provider string, code string) (OAuthUserProfile, error) {
-	if !strings.HasPrefix(code, "mock_") {
-		return OAuthUserProfile{}, fmt.Errorf("invalid mock authorization code")
-	}
-
-	encodedPayload := strings.TrimPrefix(code, "mock_")
-	decodedBytes, err := base64.URLEncoding.DecodeString(encodedPayload)
-	if err != nil {
-		return OAuthUserProfile{}, fmt.Errorf("failed to decode mock payload: %w", err)
-	}
-
-	var payload struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := json.Unmarshal(decodedBytes, &payload); err != nil {
-		return OAuthUserProfile{}, fmt.Errorf("invalid mock payload: %w", err)
-	}
-
-	// Generate a deterministic provider ID based on email
-	providerID := fmt.Sprintf("mock-id-%s", payload.Email)
-
-	return OAuthUserProfile{
-		Provider:   provider,
-		ProviderID: providerID,
-		Email:      payload.Email,
-		Name:       payload.Name,
 	}, nil
 }
 
@@ -268,135 +220,4 @@ func fetchGoogleProfile(token string) (OAuthUserProfile, error) {
 		Email:      gUser.Email,
 		Name:       name,
 	}, nil
-}
-
-// ServeMockAuthorizeScreen writes the mock authorization form directly.
-func ServeMockAuthorizeScreen(w http.ResponseWriter, req *http.Request) {
-	provider := req.URL.Query().Get("provider")
-	state := req.URL.Query().Get("state")
-
-	html := fmt.Sprintf(`
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<title>Developer Mock Authorization</title>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<style>
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-				background-color: #0d1117;
-				color: #c9d1d9;
-				display: flex;
-				justify-content: center;
-				align-items: center;
-				height: 100vh;
-				margin: 0;
-			}
-			.card {
-				background-color: #161b22;
-				border: 1px solid #30363d;
-				border-radius: 12px;
-				padding: 32px;
-				width: 360px;
-				box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-			}
-			h2 { margin-top: 0; color: #58a6ff; font-weight: 500; }
-			label { display: block; margin: 16px 0 6px; font-size: 14px; color: #8b949e; }
-			input {
-				width: 100%%;
-				padding: 10px;
-				background-color: #0d1117;
-				border: 1px solid #30363d;
-				border-radius: 6px;
-				color: #fff;
-				font-size: 14px;
-				box-sizing: border-box;
-			}
-			input:focus { border-color: #58a6ff; outline: none; }
-			button {
-				width: 100%%;
-				padding: 12px;
-				background-color: #238636;
-				color: white;
-				border: none;
-				border-radius: 6px;
-				font-size: 16px;
-				font-weight: 600;
-				margin-top: 24px;
-				cursor: pointer;
-				transition: background 0.2s;
-			}
-			button:hover { background-color: #2ea44f; }
-			.info { font-size: 12px; color: #8b949e; margin-top: 16px; text-align: center; line-height: 1.4; }
-		</style>
-	</head>
-	<body>
-		<div class="card">
-			<h2>Mock OAuth Login</h2>
-			<div style="font-size: 14px; color: #8b949e; margin-bottom: 20px;">
-				Simulating login for <strong>%s</strong>
-			</div>
-			<form action="/oauth/mock/submit" method="POST">
-				<input type="hidden" name="provider" value="%s">
-				<input type="hidden" name="state" value="%s">
-
-				<label for="name">Full Name</label>
-				<input type="text" id="name" name="name" value="Developer User" required>
-
-				<label for="email">Email Address</label>
-				<input type="email" id="email" name="email" value="dev-user@example.com" required>
-
-				<button type="submit">Authorize Developer App</button>
-			</form>
-			<div class="info">
-				This bypasses external APIs and generates a secure local session. Use any test account name or email.
-			</div>
-		</div>
-	</body>
-	</html>
-	`, provider, provider, state)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(html))
-}
-
-// HandleMockSubmit processes the mock form submission and redirects back to the callback URL.
-func HandleMockSubmit(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := req.ParseForm(); err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
-
-	provider := req.FormValue("provider")
-	state := req.FormValue("state")
-	name := req.FormValue("name")
-	email := req.FormValue("email")
-
-	if name == "" || email == "" {
-		http.Error(w, "Name and Email are required", http.StatusBadRequest)
-		return
-	}
-
-	// Create a stateless JSON payload representing user profile
-	profile := struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}{
-		Email: email,
-		Name:  name,
-	}
-
-	jsonBytes, _ := json.Marshal(profile)
-	encodedPayload := base64.URLEncoding.EncodeToString(jsonBytes)
-	mockCode := fmt.Sprintf("mock_%s", encodedPayload)
-
-	// Redirect back to callback endpoint
-	callbackURL := fmt.Sprintf("/auth/%s/callback?code=%s&state=%s", provider, mockCode, url.QueryEscape(state))
-	http.Redirect(w, req, callbackURL, http.StatusFound)
 }

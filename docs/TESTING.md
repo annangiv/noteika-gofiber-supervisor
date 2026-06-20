@@ -13,7 +13,7 @@ Open **http://localhost:8080** — hard refresh (`Cmd+Shift+R`) after each deplo
 
 ## Setup (every run)
 
-1. Sign in (mock OAuth is fine).
+1. Sign in with GitHub or Google.
 2. On `/notes`, **create a vault passcode** (8+ chars). Remember it — not recoverable.
 3. Wait for **“Loading semantic search model…”** to finish (first time downloads ~30MB).
 4. Confirm header badge: **Encrypted · semantic search**.
