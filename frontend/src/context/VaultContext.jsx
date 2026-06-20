@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { deriveVaultKey, fetchVaultSalt } from '../lib/crypto';
+import { deriveVaultKeys, fetchVaultSalt } from '../lib/crypto';
 import { preloadEmbedder } from '../lib/embeddings';
+import { deriveAndSetMatrix, clearMatrix } from '../lib/fingerprint';
 
 const VaultContext = createContext(null);
 
@@ -25,8 +26,9 @@ export function VaultProvider({ children }) {
     setError('');
     try {
       const s = await ensureSalt();
-      const key = await deriveVaultKey(passcode, s);
-      setVaultKey(key);
+      const { vaultKey, hkdfKey } = await deriveVaultKeys(passcode, s);
+      await deriveAndSetMatrix(hkdfKey);
+      setVaultKey(vaultKey);
       setEmbedLoading(true);
       preloadEmbedder()
         .catch((err) => console.warn('Embedding model preload failed:', err))
@@ -58,6 +60,7 @@ export function VaultProvider({ children }) {
 
   const lock = useCallback(() => {
     setVaultKey(null);
+    clearMatrix();
   }, []);
 
   const value = useMemo(() => ({

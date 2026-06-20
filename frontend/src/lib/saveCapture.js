@@ -1,6 +1,7 @@
 import { encryptCapturePayload } from './crypto';
 import { embedPassage } from './embeddings';
 import { resolveProjectId } from './projects';
+import { fingerprintEmbeddingB64 } from './fingerprint';
 import {
   generateAutoTitle,
   classifyContentType,
@@ -38,13 +39,14 @@ export async function saveCapture(vaultKey, {
     tags: mergedTags,
   });
   const projectId = await resolveProjectId(vaultKey, project);
+  const fingerprint = fingerprintEmbeddingB64(embedding);
 
   const res = await fetch('/api/captures', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ciphertext,
-      embedding,
+      fingerprint,
       project_id: projectId,
       type: cType,
     }),

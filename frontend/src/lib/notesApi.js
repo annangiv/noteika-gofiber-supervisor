@@ -1,6 +1,7 @@
 import { embedQuery, embedPassage } from './embeddings';
 import { decryptCaptureList, decryptCaptureRecord } from './crypto';
-import { buildCaptureEmbeddingText } from './captureContent';
+import { buildCaptureEmbeddingText, formatTagsInput } from './captureContent';
+import { fingerprintEmbeddingB64, cosineSimilarity } from './fingerprint';
 
 export const DEFAULT_SEARCH_MIN = 0.70;
 export const SEARCH_MIN_FLOOR = 0.50;
@@ -12,16 +13,6 @@ export const SIMILARITY = {
   DUPLICATE_WARN: 0.65,
   DUPLICATE_SAVE: 0.78,
 };
-
-export async function decryptSearchResults(vaultKey, results) {
-  if (!vaultKey || !Array.isArray(results)) return results ?? [];
-  return Promise.all(
-    results.map(async (item) => ({
-      ...item,
-      capture: await decryptCaptureRecord(vaultKey, item.capture),
-    })),
-  );
-}
 
 function queryTerms(query) {
   return (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -130,40 +121,60 @@ export async function searchCapturesForUser(vaultKey, query, {
   const trimmed = (query ?? '').trim();
   if (!trimmed || !vaultKey) return [];
 
-  const [semanticRaw, allCaptures] = await Promise.all([
-    searchCaptures(trimmed, { minSimilarity, limit: Math.max(limit, 30) }),
+  const [semantic, allCaptures] = await Promise.all([
+    searchCaptures(vaultKey, trimmed, { minSimilarity, limit: Math.max(limit, 30) }),
     fetchAllDecryptedCaptures(vaultKey),
   ]);
 
-  const semantic = await decryptSearchResults(vaultKey, semanticRaw);
   const fts = fullTextSearchCaptures(allCaptures, trimmed, { limit: Math.max(limit, 30) });
 
   return mergeHybridSearchResults(semantic, fts, trimmed, { limit });
 }
 
-export async function searchCaptures(query, { projectId = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
+/**
+ * Server only ever sees a one-way-ish binarized fingerprint, so it can only
+ * narrow candidates by approximate (Hamming-distance) similarity — it never
+ * holds a real embedding. This decrypts the returned candidates, re-embeds
+ * their real text locally (the only place a real embedding ever exists for
+ * an existing note), and re-ranks by true cosine similarity for the exact
+ * final score. minSimilarity is applied here, on the exact score — not
+ * server-side on the approximate one, where LSH noise could wrongly drop a
+ * true near-match before it's ever verified.
+ */
+export async function searchCaptures(vaultKey, query, { projectId = '', minSimilarity = DEFAULT_SEARCH_MIN, limit = 20, excludeId = '', queryEmbedding = null, asPassage = false } = {}) {
   let embedding = queryEmbedding;
   if (!embedding?.length && query?.trim()) {
     embedding = asPassage
       ? await embedPassage(query.trim())
       : await embedQuery(query.trim());
   }
-  if (!embedding?.length) return [];
+  if (!embedding?.length || !vaultKey) return [];
 
   const res = await fetch('/api/captures/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query_embedding: embedding,
+      query_fingerprint: fingerprintEmbeddingB64(embedding),
       project_id: projectId,
-      min_similarity: minSimilarity,
-      limit,
+      limit: Math.max(limit, 30),
       exclude_id: excludeId,
     }),
   });
   if (!res.ok) return [];
   const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  const candidates = Array.isArray(data) ? data : [];
+
+  const rescored = await Promise.all(candidates.map(async (item) => {
+    const capture = await decryptCaptureRecord(vaultKey, item.capture);
+    const candidateText = buildCaptureEmbeddingText(capture.body, formatTagsInput(capture.tags));
+    const candidateEmbedding = await embedPassage(candidateText);
+    return { capture, similarity: cosineSimilarity(embedding, candidateEmbedding) };
+  }));
+
+  return rescored
+    .filter((item) => item.similarity >= minSimilarity)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
 }
 
 /**
@@ -177,12 +188,11 @@ export async function findDuplicateMatches(formBody, formTags, vaultKey, { limit
   const queryEmbedding = await embedQuery(embedText);
   if (!queryEmbedding.length) return [];
 
-  const matches = await searchCaptures('', {
+  return searchCaptures(vaultKey, '', {
     queryEmbedding,
     minSimilarity: SIMILARITY.DUPLICATE_WARN,
     limit,
   });
-  return decryptSearchResults(vaultKey, matches);
 }
 
 /** Plain-language hint for the search sensitivity slider (pct = 50–85). */

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"math/bits"
 	"net/http"
 	"sort"
 	"strings"
@@ -21,9 +23,8 @@ import (
 )
 
 const (
-	defaultSearchMinSimilarity = float32(0.70)
-	defaultSearchLimit         = 20
-	maxSearchLimit             = 50
+	defaultSearchLimit = 20
+	maxSearchLimit     = 50
 )
 
 type CapturesHandler struct {
@@ -113,40 +114,6 @@ func classifyContentType(body string) string {
 	return "note"
 }
 
-// Helper to query python embeddings sidecar
-func getEmbedding(text string) ([]float32, error) {
-	payload := map[string]string{"text": text}
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal embedding payload: %w", err)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post("http://embeddings:8000/embed", "application/json", bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return nil, fmt.Errorf("embedding service request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("embedding service returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result struct {
-		Embedding []float32 `json:"embedding"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode embedding response: %w", err)
-	}
-
-	return result.Embedding, nil
-}
-
-func buildEmbeddingText(title, body string, tags []string) string {
-	return utils.CaptureSearchText(title, body, tags)
-}
-
 func getSuggestedTags(title, body string, existing []string) ([]string, error) {
 	payload := map[string]interface{}{
 		"title":         title,
@@ -190,10 +157,6 @@ func resolveCaptureTags(title, body string, userTags []string) []string {
 	return utils.MergeTags(merged, suggested)
 }
 
-func tagsEqual(a, b []string) bool {
-	return strings.Join(utils.NormalizeTags(a), ",") == strings.Join(utils.NormalizeTags(b), ",")
-}
-
 // Create a new capture (client-encrypted or legacy plaintext).
 func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
@@ -210,14 +173,14 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Ciphertext string    `json:"ciphertext"`
-		Embedding  []float32 `json:"embedding"`
-		Title      string    `json:"title"`
-		Body       string    `json:"body"`
-		ProjectID  string    `json:"project_id"`
-		SourceURL  string    `json:"source_url"`
-		Tags       []string  `json:"tags"`
-		Type       string    `json:"type"`
+		Ciphertext  string `json:"ciphertext"`
+		Fingerprint string `json:"fingerprint"`
+		Title       string `json:"title"`
+		Body        string `json:"body"`
+		ProjectID   string `json:"project_id"`
+		SourceURL   string `json:"source_url"`
+		Tags        []string `json:"tags"`
+		Type        string `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -249,9 +212,12 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		if err := prepareCaptureForStorage(&capture, input.Embedding); err != nil {
-			log.Printf("[CapturesHandler] Failed to encrypt embedding: %v", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to store embedding"})
+		if strings.TrimSpace(input.Fingerprint) != "" {
+			fp, err := base64.StdEncoding.DecodeString(input.Fingerprint)
+			if err != nil || len(fp) != 32 {
+				return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
+			}
+			capture.Fingerprint = fp
 		}
 		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
 			log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
@@ -271,26 +237,19 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	}
 
 	tags := resolveCaptureTags(title, input.Body, utils.NormalizeTags(input.Tags))
-	embeddingText := buildEmbeddingText(title, input.Body, tags)
-	vector, err := getEmbedding(embeddingText)
-	if err != nil {
-		log.Printf("[CapturesHandler] Embedding unavailable on create, saving without vector: %v", err)
-		vector = nil
-	}
 
 	cType := classifyContentType(input.Body)
 	capture := db.Capture{
-		ID:              uuid.New().String(),
-		UserID:          userID,
-		ProjectID:       projectID,
-		Title:           title,
-		Body:            input.Body,
-		SourceURL:       input.SourceURL,
-		Type:            cType,
-		Tags:            tags,
-		LegacyEmbedding: vector,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:        uuid.New().String(),
+		UserID:    userID,
+		ProjectID: projectID,
+		Title:     title,
+		Body:      input.Body,
+		SourceURL: input.SourceURL,
+		Type:      cType,
+		Tags:      tags,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
@@ -379,14 +338,14 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var input struct {
-		Ciphertext string    `json:"ciphertext"`
-		Embedding  []float32 `json:"embedding"`
-		Title      string    `json:"title"`
-		Body       string    `json:"body"`
-		ProjectID  string    `json:"project_id"`
-		SourceURL  string    `json:"source_url"`
-		Tags       *[]string `json:"tags"`
-		Type       string    `json:"type"`
+		Ciphertext  string `json:"ciphertext"`
+		Fingerprint string `json:"fingerprint"`
+		Title       string `json:"title"`
+		Body        string `json:"body"`
+		ProjectID   string `json:"project_id"`
+		SourceURL   string `json:"source_url"`
+		Tags        *[]string `json:"tags"`
+		Type        string `json:"type"`
 	}
 
 	if err := c.BodyParser(&input); err != nil {
@@ -409,10 +368,12 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 		if input.ProjectID != "" {
 			existing.ProjectID = strings.TrimSpace(input.ProjectID)
 		}
-		if len(input.Embedding) > 0 {
-			if err := prepareCaptureForStorage(&existing, input.Embedding); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": "Failed to store embedding"})
+		if strings.TrimSpace(input.Fingerprint) != "" {
+			fp, err := base64.StdEncoding.DecodeString(input.Fingerprint)
+			if err != nil || len(fp) != 32 {
+				return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
 			}
+			existing.Fingerprint = fp
 		}
 		existing.UpdatedAt = time.Now().Unix()
 		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: existing}, 5*time.Second); err != nil {
@@ -442,26 +403,13 @@ func (h *CapturesHandler) Update(c *fiber.Ctx) error {
 
 	existing.SourceURL = input.SourceURL
 
-	tagsChanged := false
 	if input.Tags != nil {
-		normalizedTags := utils.NormalizeTags(*input.Tags)
-		tagsChanged = !tagsEqual(existing.Tags, normalizedTags)
-		existing.Tags = normalizedTags
+		existing.Tags = utils.NormalizeTags(*input.Tags)
 	}
 
 	if textChanged {
 		existing.Tags = resolveCaptureTags(existing.Title, existing.Body, existing.Tags)
 		existing.Type = classifyContentType(existing.Body)
-	}
-
-	if textChanged || tagsChanged {
-		embeddingText := buildEmbeddingText(existing.Title, existing.Body, existing.Tags)
-		vector, err := getEmbedding(embeddingText)
-		if err != nil {
-			log.Printf("[CapturesHandler] Embedding unavailable on update, keeping prior vector: %v", err)
-		} else {
-			existing.LegacyEmbedding = vector
-		}
 	}
 
 	existing.UpdatedAt = time.Now().Unix()
@@ -710,19 +658,27 @@ type SearchResult struct {
 }
 
 type searchRequest struct {
-	Query           string    `json:"query"`
-	QueryEmbedding  []float32 `json:"query_embedding"`
-	ProjectID       string    `json:"project_id"`
-	MinSimilarity   *float32  `json:"min_similarity"`
-	Limit           int       `json:"limit"`
-	ExcludeID       string    `json:"exclude_id"`
+	QueryFingerprint string `json:"query_fingerprint"`
+	ProjectID        string `json:"project_id"`
+	Limit            int    `json:"limit"`
+	ExcludeID        string `json:"exclude_id"`
 }
 
-func rankCapturesBySimilarity(query string, queryVector []float32, captures []db.Capture, opts searchRequest) []SearchResult {
-	minSim := defaultSearchMinSimilarity
-	if opts.MinSimilarity != nil {
-		minSim = *opts.MinSimilarity
+// hammingDistance counts differing bits between two equal-length byte slices.
+func hammingDistance(a, b []byte) int {
+	dist := 0
+	for i := 0; i < len(a) && i < len(b); i++ {
+		dist += bits.OnesCount8(a[i] ^ b[i])
 	}
+	return dist
+}
+
+// rankCapturesByFingerprint ranks captures by Hamming distance between their
+// stored fingerprint and the query fingerprint, converting distance to a
+// cosine-like score via the SimHash plug-in estimator cos(pi * hamming / 256).
+// This is an approximate pre-filter only — the client re-ranks exactly on the
+// decrypted candidates using the real embeddings.
+func rankCapturesByFingerprint(queryFP []byte, captures []db.Capture, opts searchRequest) []SearchResult {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -736,15 +692,12 @@ func rankCapturesBySimilarity(query string, queryVector []float32, captures []db
 		if opts.ExcludeID != "" && cap.ID == opts.ExcludeID {
 			continue
 		}
+		if len(queryFP) != 32 || len(cap.Fingerprint) != 32 {
+			continue
+		}
 
-		capVector := captureSearchVector(cap)
-		if len(queryVector) == 0 || len(capVector) == 0 {
-			continue
-		}
-		similarity := utils.CosineSimilarity(queryVector, capVector)
-		if similarity < minSim {
-			continue
-		}
+		dist := hammingDistance(queryFP, cap.Fingerprint)
+		similarity := float32(math.Cos(math.Pi * float64(dist) / 256))
 
 		results = append(results, SearchResult{
 			Capture:    toCaptureAPI(cap),
@@ -765,7 +718,10 @@ func rankCapturesBySimilarity(query string, queryVector []float32, captures []db
 	return results
 }
 
-// Perform Semantic Vector Search
+// Search performs an approximate fingerprint-based candidate search. The
+// server never sees a real embedding — only a one-way-ish binarized
+// fingerprint — so this can only narrow candidates, not exactly rank them;
+// the client decrypts the returned candidates and re-ranks exactly.
 func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
 	if !ok || userID == "" {
@@ -777,19 +733,9 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	query := strings.TrimSpace(input.Query)
-	queryVector := input.QueryEmbedding
-
-	if len(queryVector) == 0 {
-		if query == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "query_embedding or query text is required"})
-		}
-		var err error
-		queryVector, err = getEmbedding(query)
-		if err != nil {
-			log.Printf("[CapturesHandler] Embedding unavailable for search, using text similarity: %v", err)
-			queryVector = nil
-		}
+	queryFP, err := base64.StdEncoding.DecodeString(input.QueryFingerprint)
+	if err != nil || len(queryFP) != 32 {
+		return c.Status(400).JSON(fiber.Map{"error": "query_fingerprint must be base64-encoded 32 bytes"})
 	}
 
 	projectFilter := strings.TrimSpace(input.ProjectID)
@@ -807,5 +753,5 @@ func (h *CapturesHandler) Search(c *fiber.Ctx) error {
 		captures = []db.Capture{}
 	}
 
-	return c.JSON(rankCapturesBySimilarity(query, queryVector, captures, input))
+	return c.JSON(rankCapturesByFingerprint(queryFP, captures, input))
 }

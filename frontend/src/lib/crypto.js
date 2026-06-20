@@ -1,13 +1,13 @@
 const PBKDF2_ITERATIONS = 310_000;
 
-function b64ToBytes(b64) {
+export function b64ToBytes(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-function bytesToB64(bytes) {
+export function bytesToB64(bytes) {
   let bin = '';
   bytes.forEach((b) => { bin += String.fromCharCode(b); });
   return btoa(bin);
@@ -20,22 +20,33 @@ export async function fetchVaultSalt() {
   return b64ToBytes(data.salt);
 }
 
-export async function deriveVaultKey(passcode, saltBytes) {
+/**
+ * Derives a single root key from the passcode (slow, via PBKDF2), then fans
+ * it out into the AES-GCM vault key (note encryption) and an HKDF base key
+ * (embedding-fingerprint matrix derivation — see lib/fingerprint.js). Doing
+ * one slow derivation and fanning out avoids running PBKDF2 twice.
+ */
+export async function deriveVaultKeys(passcode, saltBytes) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     enc.encode(passcode),
     'PBKDF2',
     false,
-    ['deriveKey'],
+    ['deriveBits'],
   );
-  return crypto.subtle.deriveKey(
+  const rootBits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
+    256,
   );
+  const vaultKey = await crypto.subtle.importKey(
+    'raw', rootBits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'],
+  );
+  const hkdfKey = await crypto.subtle.importKey(
+    'raw', rootBits, 'HKDF', false, ['deriveBits'],
+  );
+  return { vaultKey, hkdfKey };
 }
 
 export async function encryptCapturePayload(key, payload) {

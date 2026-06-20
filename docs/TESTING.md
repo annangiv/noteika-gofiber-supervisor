@@ -192,9 +192,8 @@ Scopes: read:user, user:email
 
 | Symptom | Check |
 |---------|--------|
-| Search always empty | Model loaded? Re-save notes after fresh `data/` wipe (vectors stored on save). |
+| Search always empty | Model loaded? Re-save notes after fresh `data/` wipe (fingerprints stored on save). |
 | Every note flags as duplicate | Duplicate check uses **query↔passage** (not passage↔passage). Re-save notes after deploy. Unrelated notes (scenario 4) should not warn. |
-| `NOTEIKA_EMBEDDING_KEY` | Set in `.env` for production; dev uses default if empty. |
 | Stale UI | Hard refresh after `docker compose up -d --build`. |
 
 ---
@@ -202,8 +201,8 @@ Scopes: read:user, user:email
 ## Architecture reminder (what you’re testing)
 
 - **Encrypted on client:** title, body, tags, source URL  
-- **Plain over TLS:** embedding vectors only  
-- **Encrypted at rest:** vectors via `NOTEIKA_EMBEDDING_KEY`; note ciphertext via vault passcode  
-- **Search / duplicates:** client embed → server cosine on decrypted vectors → client decrypt results  
+- **Plain over TLS:** opaque binarized embedding fingerprint only — never the real embedding  
+- **No server-side embedding key:** fingerprints are non-reversible by construction, nothing to encrypt at rest  
+- **Search / duplicates:** client embed + fingerprint → server Hamming-distance candidate narrowing → client decrypt + re-embed + exact cosine re-rank  
 
 See [E2E.md](./E2E.md) for full design.

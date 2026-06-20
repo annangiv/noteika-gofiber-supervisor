@@ -111,7 +111,6 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 ### Production hosting
 
 - [ ] Real GitHub/Google OAuth apps (redirect URIs for prod domain)
-- [ ] `NOTEIKA_EMBEDDING_KEY` — `openssl rand -base64 32` (required in prod)
 - [ ] `ENCRYPTION_KEY` — unique 32-byte secret (not example value)
 - [ ] HTTPS reverse proxy (Caddy/nginx) → container `:8080`
 - [ ] Persistent `./data` volume backup strategy
