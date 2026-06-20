@@ -1,20 +1,34 @@
+version: "3.8"
+
 services:
   app:
     build:
       context: .
-    ports:
-      - "8080:8080"
+    container_name: noteika-go-app
+    networks:
+      - noteika-network
+      - proxy_net
     env_file:
       - .env
     volumes:
       - ./data:/app/data
-    depends_on:
-      - embeddings
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy_net"
+      
+      # Routing
+      - "traefik.http.routers.noteika.rule=Host(`noteika.com`)"
+      - "traefik.http.routers.noteika.entrypoints=websecure"
+      - "traefik.http.routers.noteika.tls.certresolver=myresolver"
+      
+      # Service definition
+      - "traefik.http.routers.noteika.service=noteika-svc"
+      - "traefik.http.services.noteika-svc.loadbalancer.server.port=8080"
 
-  embeddings:
-    build:
-      context: ./embeddings
-    ports:
-      - "8001:8000"
-    restart: unless-stopped
+networks:
+  noteika-network:
+    driver: bridge
+    name: noteika-net
+  proxy_net:
+    external: true
