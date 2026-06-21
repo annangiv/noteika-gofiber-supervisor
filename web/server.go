@@ -74,7 +74,7 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/about", pageHandler)
 	s.app.Get("/notes", pageHandler)
 	s.app.Get("/account", pageHandler)
-	s.app.Get("/dev/import", pageHandler)
+	s.app.Get("/import", pageHandler)
 	s.app.Get("/dashboard", pageHandler) // legacy redirect target
 
 	// Auth trigger and callback
@@ -96,6 +96,7 @@ func (s *Server) Start(port string) error {
 	// Captures CRUD & Search API
 	api.Get("/captures", capturesHandler.List)
 	api.Post("/captures", capturesHandler.Create)
+	api.Post("/captures/import", capturesHandler.Import)
 	api.Get("/captures/:id", capturesHandler.Get)
 	api.Patch("/captures/:id", capturesHandler.Update)
 	api.Delete("/captures/:id", capturesHandler.Delete)

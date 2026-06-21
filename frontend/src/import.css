@@ -1,0 +1,121 @@
+.import-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.import-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.import-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+}
+
+.import-lead {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 640px;
+}
+
+.import-section {
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.import-section p {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.import-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.import-file-btn {
+  position: relative;
+  cursor: pointer;
+}
+
+.import-file-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.import-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.import-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.import-project input {
+  width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.import-hint {
+  font-size: 13px;
+  color: var(--warning);
+}
+
+.import-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.import-progress {
+  margin-top: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.import-progress-bar {
+  height: 6px;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.import-progress p {
+  padding: 10px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.import-success {
+  color: var(--success, #16a34a);
+  font-weight: 500;
+}
+
+.import-warn {
+  color: var(--warning);
+}
+
+.import-errors {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--danger, #dc2626);
+}

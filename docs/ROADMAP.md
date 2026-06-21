@@ -14,7 +14,7 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 - [x] Search: BGE query/passage, client text re-rank for single-word queries
 - [x] Duplicate detection: asymmetric query↔passage, raised thresholds
 - [ ] Phase E2E-2: hardening, migration, encrypt tags/projects
-- [ ] Phase E2E-3: Flutter + SQLite
+- [ ] Phase E2E-3: Flutter + SQLite — see [MOBILE.md](./MOBILE.md) for full requirements
 - [ ] Phase E2E-4: optional title model, recovery key
 
 ---
@@ -114,7 +114,6 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 - [ ] `ENCRYPTION_KEY` — unique 32-byte secret (not example value)
 - [ ] HTTPS reverse proxy (Caddy/nginx) → container `:8080`
 - [ ] Persistent `./data` volume backup strategy
-- [ ] Hide or remove `/dev/import` in production (eval only)
 
 ### Polish before public
 
@@ -130,6 +129,7 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 - [ ] Silent content-type detection (link vs Q&A vs prompt) for card layout
 - [ ] Dark mode
 - [ ] Export captures (JSON / markdown)
+- [x] Bulk markdown import (Pro feature, up to 100 files) — `/import`, `POST /api/captures/import`
 - [ ] Mobile-friendly capture UI
 
 ---
@@ -149,5 +149,4 @@ Derived from [PRODUCT.md](./PRODUCT.md). Check items off as shipped.
 - Multi-user teams / sharing
 - Graph / backlinks view
 - In-app AI chat
-- Mobile native apps
 - noteika.com domain (unavailable as of planning)

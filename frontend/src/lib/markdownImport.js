@@ -3,7 +3,8 @@ export function titleFromFilename(filename) {
   return base.replace(/\.md$/i, '').trim();
 }
 
-export function parseEvergreenMarkdown(rawContent) {
+/** Strip optional YAML frontmatter, pulling out a `url:` field if present. */
+export function parseFrontmatter(rawContent) {
   const raw = rawContent ?? '';
   if (!raw.startsWith('---')) {
     return { sourceUrl: '', body: raw.trim() };
@@ -20,10 +21,10 @@ export function parseEvergreenMarkdown(rawContent) {
   return { sourceUrl: urlMatch?.[1]?.trim() ?? '', body: body.trim() };
 }
 
-/** Normalize Andy Matuschak evergreen fixture markdown for Noteika save. */
-export function prepareEvergreenNote(filename, rawContent) {
+/** Normalize an arbitrary markdown file (title from filename, optional frontmatter) for Noteika save. */
+export function prepareMarkdownNote(filename, rawContent) {
   const title = titleFromFilename(filename);
-  const { sourceUrl, body: stripped } = parseEvergreenMarkdown(rawContent);
+  const { sourceUrl, body: stripped } = parseFrontmatter(rawContent);
   let body = stripped;
 
   if (body && !body.toLowerCase().startsWith(title.toLowerCase())) {

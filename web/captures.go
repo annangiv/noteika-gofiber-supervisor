@@ -157,6 +157,94 @@ func resolveCaptureTags(title, body string, userTags []string) []string {
 	return utils.MergeTags(merged, suggested)
 }
 
+type encryptedCaptureInput struct {
+	Ciphertext      string `json:"ciphertext"`
+	Fingerprint     string `json:"fingerprint"`
+	EncryptedVector string `json:"encrypted_vector"`
+	ProjectID       string `json:"project_id"`
+	Type            string `json:"type"`
+}
+
+// saveEncryptedCapture builds and persists a capture from already-encrypted
+// client input. Shared by Create's ciphertext branch and Import — the only
+// difference between those two callers is which limit/tier check runs first.
+func (h *CapturesHandler) saveEncryptedCapture(c *fiber.Ctx, userID string, input encryptedCaptureInput) error {
+	ct, err := base64.StdEncoding.DecodeString(strings.TrimSpace(input.Ciphertext))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid ciphertext encoding"})
+	}
+
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID == "" {
+		projectID = "inbox"
+	}
+	cType := strings.TrimSpace(input.Type)
+	if cType == "" {
+		cType = "note"
+	}
+
+	now := time.Now().Unix()
+	capture := db.Capture{
+		ID:         uuid.New().String(),
+		UserID:     userID,
+		ProjectID:  projectID,
+		Ciphertext: ct,
+		Type:       cType,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if strings.TrimSpace(input.Fingerprint) != "" {
+		fp, err := base64.StdEncoding.DecodeString(input.Fingerprint)
+		if err != nil || len(fp) != 32 {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
+		}
+		capture.Fingerprint = fp
+	}
+	if strings.TrimSpace(input.EncryptedVector) != "" {
+		ev, err := base64.StdEncoding.DecodeString(input.EncryptedVector)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid encrypted_vector encoding"})
+		}
+		capture.EncryptedVector = ev
+	}
+
+	if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
+		log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to save capture"})
+	}
+	return c.Status(201).JSON(toCaptureAPI(capture))
+}
+
+// Import is the bulk-import path for Pro users migrating an existing corpus
+// of notes. It behaves like Create's ciphertext branch, except it requires
+// Pro access instead of being subject to the free capture limit, and has no
+// legacy plaintext path — import always runs through the same client-side
+// encrypt+embed+fingerprint pipeline as a normal save.
+func (h *CapturesHandler) Import(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	user, err := h.billing.loadUser(userID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load user profile"})
+	}
+	if !h.billing.userHasProAccess(user) {
+		return c.Status(403).JSON(fiber.Map{"error": "Bulk import is a Pro feature", "upgrade_url": "/account"})
+	}
+
+	var input encryptedCaptureInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	if strings.TrimSpace(input.Ciphertext) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "ciphertext is required"})
+	}
+
+	return h.saveEncryptedCapture(c, userID, input)
+}
+
 // Create a new capture (client-encrypted or legacy plaintext).
 func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(string)
@@ -196,42 +284,13 @@ func (h *CapturesHandler) Create(c *fiber.Ctx) error {
 	now := time.Now().Unix()
 
 	if strings.TrimSpace(input.Ciphertext) != "" {
-		ct, err := base64.StdEncoding.DecodeString(input.Ciphertext)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid ciphertext encoding"})
-		}
-		cType := strings.TrimSpace(input.Type)
-		if cType == "" {
-			cType = "note"
-		}
-		capture := db.Capture{
-			ID:         uuid.New().String(),
-			UserID:     userID,
-			ProjectID:  projectID,
-			Ciphertext: ct,
-			Type:       cType,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-		if strings.TrimSpace(input.Fingerprint) != "" {
-			fp, err := base64.StdEncoding.DecodeString(input.Fingerprint)
-			if err != nil || len(fp) != 32 {
-				return c.Status(400).JSON(fiber.Map{"error": "Invalid fingerprint: must be base64-encoded 32 bytes"})
-			}
-			capture.Fingerprint = fp
-		}
-		if strings.TrimSpace(input.EncryptedVector) != "" {
-			ev, err := base64.StdEncoding.DecodeString(input.EncryptedVector)
-			if err != nil {
-				return c.Status(400).JSON(fiber.Map{"error": "Invalid encrypted_vector encoding"})
-			}
-			capture.EncryptedVector = ev
-		}
-		if _, err := h.gateway.Send(actor.TypeSaveCapture, actor.SaveCapturePayload{Capture: capture}, 5*time.Second); err != nil {
-			log.Printf("[CapturesHandler] SaveCapture failed: %v", err)
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to save capture"})
-		}
-		return c.Status(201).JSON(toCaptureAPI(capture))
+		return h.saveEncryptedCapture(c, userID, encryptedCaptureInput{
+			Ciphertext:      input.Ciphertext,
+			Fingerprint:     input.Fingerprint,
+			EncryptedVector: input.EncryptedVector,
+			ProjectID:       input.ProjectID,
+			Type:            input.Type,
+		})
 	}
 
 	// Legacy plaintext path (pre-E2E clients / migration).

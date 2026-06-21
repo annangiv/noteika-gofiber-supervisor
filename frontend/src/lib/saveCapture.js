@@ -12,17 +12,7 @@ import {
   buildCaptureEmbeddingText,
 } from './captureContent';
 
-/**
- * Same E2E save path as NotesPage: client embed + encrypt → POST /api/captures.
- */
-export async function saveCapture(vaultKey, {
-  body,
-  project = 'Inbox',
-  tags = '',
-  sourceUrl = '',
-  type = null,
-} = {}) {
-  if (!vaultKey) throw new Error('Vault not unlocked');
+async function buildCapturePayload(vaultKey, { body, project, tags, sourceUrl, type }) {
   const trimmed = (body ?? '').trim();
   if (!trimmed) throw new Error('Empty note body');
 
@@ -42,16 +32,20 @@ export async function saveCapture(vaultKey, {
   const fingerprint = fingerprintEmbeddingB64(embedding);
   const encryptedVector = await encryptEmbedding(vaultKey, embedding);
 
-  const res = await fetch('/api/captures', {
+  return {
+    ciphertext,
+    fingerprint,
+    encrypted_vector: encryptedVector,
+    project_id: projectId,
+    type: cType,
+  };
+}
+
+async function postCapture(endpoint, payload) {
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ciphertext,
-      fingerprint,
-      encrypted_vector: encryptedVector,
-      project_id: projectId,
-      type: cType,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -62,4 +56,35 @@ export async function saveCapture(vaultKey, {
     throw error;
   }
   return res.json();
+}
+
+/**
+ * Same E2E save path as NotesPage: client embed + encrypt → POST /api/captures.
+ */
+export async function saveCapture(vaultKey, {
+  body,
+  project = 'Inbox',
+  tags = '',
+  sourceUrl = '',
+  type = null,
+} = {}) {
+  if (!vaultKey) throw new Error('Vault not unlocked');
+  const payload = await buildCapturePayload(vaultKey, { body, project, tags, sourceUrl, type });
+  return postCapture('/api/captures', payload);
+}
+
+/**
+ * Same client pipeline as saveCapture, but through the Pro-only bulk import
+ * endpoint (not subject to the free capture limit; requires Pro access).
+ */
+export async function importCapture(vaultKey, {
+  body,
+  project = 'Imports',
+  tags = '',
+  sourceUrl = '',
+  type = null,
+} = {}) {
+  if (!vaultKey) throw new Error('Vault not unlocked');
+  const payload = await buildCapturePayload(vaultKey, { body, project, tags, sourceUrl, type });
+  return postCapture('/api/captures/import', payload);
 }
