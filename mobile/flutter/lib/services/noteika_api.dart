@@ -56,6 +56,18 @@ class NoteikaApi {
     await _cookieJar.deleteAll();
   }
 
+  /// Development-only sign-in (ENVIRONMENT=development). Google OAuth is blocked in WebViews.
+  Future<Map<String, dynamic>> devLogin({String? email, String? name}) async {
+    final res = await _dio.post('/api/auth/dev-login', data: {
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (name != null && name.isNotEmpty) 'name': name,
+    });
+    if (res.statusCode != 200) {
+      throw Exception('Dev login failed (${res.statusCode})');
+    }
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   Future<Uint8List> fetchVaultSalt() async {
     final res = await _dio.get('/api/vault/salt');
     final saltB64 = (res.data as Map)['salt'] as String;

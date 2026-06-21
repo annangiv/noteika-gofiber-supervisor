@@ -84,6 +84,7 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/auth/login/:provider", authHandler.Login)
 	s.app.Get("/auth/:provider/callback", authHandler.Callback)
 	s.app.Get("/auth/logout", authHandler.Logout)
+	s.app.Post("/api/auth/dev-login", authHandler.DevLogin)
 
 	// Stripe webhook (no session auth — verified by signature)
 	s.app.Post("/webhooks/stripe", billingHandler.Webhook)

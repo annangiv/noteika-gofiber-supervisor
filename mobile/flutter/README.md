@@ -7,6 +7,12 @@ Native iOS + Android client for [Noteika](../../docs/PRODUCT.md). Matches the we
 1. [Flutter SDK](https://docs.flutter.dev/get-started/install) 3.19+
 2. Noteika backend running (`docker compose up` → `http://localhost:8080`)
 
+## Sign in (mobile)
+
+**Google/GitHub OAuth does not work in an in-app WebView** — Google blocks embedded browsers. For local emulator testing, use **Dev sign in** on the login screen (server must have `ENVIRONMENT=development`).
+
+Production mobile OAuth (system browser + deep link) is planned separately.
+
 ## Setup
 
 ```bash
