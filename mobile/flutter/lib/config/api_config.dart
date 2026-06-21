@@ -18,4 +18,18 @@ class ApiConfig {
   }
 
   static const sessionCookieName = 'keller_session';
+
+  /// Web Client ID from the Google Developer Console, needed by the native Google Sign-in SDK to request a valid backend ID token.
+  /// Override: flutter run --dart-define=GOOGLE_SERVER_CLIENT_ID=your-id-here
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '',
+  );
+
+  /// Product identifier for Noteika Pro Monthly Subscription on Google Play Console and App Store Connect.
+  /// Override: flutter run --dart-define=PRO_SUBSCRIPTION_ID=noteika_pro_monthly
+  static const String proSubscriptionId = String.fromEnvironment(
+    'PRO_SUBSCRIPTION_ID',
+    defaultValue: 'noteika_pro_monthly',
+  );
 }

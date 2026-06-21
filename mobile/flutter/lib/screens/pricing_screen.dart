@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -22,6 +24,16 @@ class _PricingScreenState extends State<PricingScreen> {
     });
     try {
       final state = context.read<AppState>();
+
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        debugPrint('PricingScreen: Initiating native mobile IAP purchase...');
+        await state.iapService.buyProSubscription();
+        if (state.iapService.errorMessage != null) {
+          throw Exception(state.iapService.errorMessage);
+        }
+        return;
+      }
+
       final res = await state.api.checkoutStripe();
       final urlStr = res['url'] as String?;
       if (urlStr != null) {
@@ -45,12 +57,15 @@ class _PricingScreenState extends State<PricingScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final isPro = state.user?['pro_access'] == true;
+    final isIapPending = !kIsWeb && state.iapService.purchasePending;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
-        title: const Text('Pricing'),
-        backgroundColor: const Color(0xFF161B22),
+        title: const Text('Pricing & Plans'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -58,12 +73,12 @@ class _PricingScreenState extends State<PricingScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Pricing',
+              'PLANS',
               style: TextStyle(
-                color: Color(0xFF58A6FF),
+                color: Color(0xFFA78BFA),
                 fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-                fontSize: 14,
+                letterSpacing: 1.5,
+                fontSize: 12,
               ),
               textAlign: TextAlign.center,
             ),
@@ -74,6 +89,7 @@ class _PricingScreenState extends State<PricingScreen> {
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 28,
+                letterSpacing: -0.5,
               ),
               textAlign: TextAlign.center,
             ),
@@ -81,18 +97,26 @@ class _PricingScreenState extends State<PricingScreen> {
             const Text(
               'Start free with 10 notes. Upgrade when Noteika becomes part of your daily workflow.',
               style: TextStyle(
-                color: Color(0xFF8B949E),
+                color: Color(0xFF9CA3AF),
                 fontSize: 14,
-                height: 1.45,
+                height: 1.5,
               ),
               textAlign: TextAlign.center,
             ),
             if (_error != null) ...[
               const SizedBox(height: 16),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
-                textAlign: TextAlign.center,
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0x1FFE4A49),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0x66FE4A49)),
+                ),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Color(0xFFFE4A49), fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
             const SizedBox(height: 32),
@@ -131,7 +155,7 @@ class _PricingScreenState extends State<PricingScreen> {
               ctaText: isPro ? 'Current Plan' : 'Upgrade to Pro',
               isHighlighted: true,
               isCurrent: isPro,
-              onPressed: isPro || _loading ? null : _upgrade,
+              onPressed: isPro || _loading || isIapPending ? null : _upgrade,
             ),
             const SizedBox(height: 32),
           ],
@@ -152,15 +176,22 @@ class _PricingScreenState extends State<PricingScreen> {
     required bool isCurrent,
     required VoidCallback? onPressed,
   }) {
-    return Container(
+    final state = context.read<AppState>();
+    final showLoader = _loading || (!kIsWeb && state.iapService.purchasePending);
+
+    final borderGradient = isHighlighted
+        ? const LinearGradient(
+            colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          )
+        : null;
+
+    final cardContent = Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isHighlighted ? const Color(0xFF58A6FF) : const Color(0xFF30363D),
-          width: isHighlighted ? 2.0 : 1.0,
-        ),
+        color: const Color(0xFF13151A),
+        borderRadius: BorderRadius.circular(15),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -174,22 +205,24 @@ class _PricingScreenState extends State<PricingScreen> {
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
                   fontSize: 22,
+                  letterSpacing: -0.5,
                 ),
               ),
               if (isHighlighted)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0x1F58A6FF),
+                    color: const Color(0x1F8B5CF6),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0x6658A6FF)),
+                    border: Border.all(color: const Color(0x668B5CF6)),
                   ),
                   child: const Text(
                     'Unlimited saves',
                     style: TextStyle(
-                      color: Color(0xFF58A6FF),
-                      fontSize: 12,
+                      color: Color(0xFFA78BFA),
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -204,56 +237,62 @@ class _PricingScreenState extends State<PricingScreen> {
                 price,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 36,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 40,
+                  letterSpacing: -1,
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               Text(
                 period,
                 style: const TextStyle(
-                  color: Color(0xFF8B949E),
+                  color: Color(0xFF9CA3AF),
                   fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             desc,
             style: const TextStyle(
-              color: Color(0xFF8B949E),
+              color: Color(0xFF9CA3AF),
               fontSize: 14,
-              height: 1.4,
+              height: 1.45,
             ),
           ),
           const SizedBox(height: 24),
-          const Divider(color: Color(0xFF30363D)),
-          const SizedBox(height: 16),
+          const Divider(color: Color(0xFF1F2228), height: 1),
+          const SizedBox(height: 20),
           ...features.map((feat) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Row(
                   children: [
-                    const Icon(Icons.check, color: Color(0xFF3FB950), size: 18),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         feat,
-                        style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 14),
+                        style: const TextStyle(
+                          color: Color(0xFFD1D5DB),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
                   ],
                 ),
               )),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           if (isCurrent)
             OutlinedButton(
               onPressed: null,
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFF30363D)),
-                disabledForegroundColor: const Color(0xFF8B949E),
+                side: const BorderSide(color: Color(0xFF1F2228)),
+                disabledForegroundColor: const Color(0xFF6B7280),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               child: Text(ctaText),
             )
@@ -261,23 +300,23 @@ class _PricingScreenState extends State<PricingScreen> {
             ElevatedButton(
               onPressed: null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF21262D),
-                disabledForegroundColor: const Color(0xFF8B949E),
+                backgroundColor: const Color(0xFF1F2228),
+                disabledForegroundColor: const Color(0xFF6B7280),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               child: Text(ctaText),
             )
           else
-            FilledButton(
+            ElevatedButton(
               onPressed: onPressed,
-              style: FilledButton.styleFrom(
-                backgroundColor: isHighlighted ? const Color(0xFF1F6FEB) : const Color(0xFF21262D),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF8B5CF6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: _loading
+              child: showLoader
                   ? const SizedBox(
                       height: 18,
                       width: 18,
@@ -288,5 +327,28 @@ class _PricingScreenState extends State<PricingScreen> {
         ],
       ),
     );
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: borderGradient,
+        border: isHighlighted
+            ? null
+            : Border.all(color: const Color(0xFF1F2228), width: 1),
+        boxShadow: isHighlighted
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.12),
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      padding: isHighlighted ? const EdgeInsets.all(1.5) : EdgeInsets.zero,
+      child: cardContent,
+    );
   }
 }
+

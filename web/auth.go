@@ -2,6 +2,7 @@ package web
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -35,10 +36,15 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	state := utils.GenerateRandomHex(16)
 	expiresAt := time.Now().Add(10 * time.Minute).Unix()
 
+	prov := provider
+	if c.Query("mobile") == "true" {
+		prov = provider + ":mobile"
+	}
+
 	// Persist state in BadgerDB via VaultActor
 	payload := actor.SaveOauthStatePayload{
 		State:     state,
-		Provider:  provider,
+		Provider:  prov,
 		ExpiresAt: expiresAt,
 	}
 	_, err := h.gateway.Send(actor.TypeSaveOauthState, payload, 5*time.Second)
@@ -77,7 +83,21 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	}
 
 	storedProvider, ok := res.(string)
-	if !ok || storedProvider != provider {
+	if !ok {
+		return c.Status(400).SendString("OAuth state validation failed")
+	}
+
+	storedProviderClean := storedProvider
+	isMobile := false
+	if strings.Contains(storedProvider, ":") {
+		parts := strings.Split(storedProvider, ":")
+		storedProviderClean = parts[0]
+		if len(parts) > 1 && parts[1] == "mobile" {
+			isMobile = true
+		}
+	}
+
+	if storedProviderClean != provider {
 		return c.Status(400).SendString("OAuth state validation failed")
 	}
 
@@ -157,6 +177,10 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[AuthHandler] SaveSession failed: %v", err)
 		return c.Status(500).SendString("Failed to create user session")
+	}
+
+	if isMobile {
+		return c.Redirect("noteika://oauth-callback?token=" + sessionID)
 	}
 
 	// Set session cookie

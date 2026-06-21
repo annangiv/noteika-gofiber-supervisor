@@ -70,7 +70,10 @@ class _AccountScreenState extends State<AccountScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save settings: $e')),
+          SnackBar(
+            backgroundColor: const Color(0xFF13151A),
+            content: Text('Failed to save settings: $e', style: const TextStyle(color: Color(0xFFFE4A49))),
+          ),
         );
       }
     } finally {
@@ -121,13 +124,22 @@ class _AccountScreenState extends State<AccountScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export saved to documents: noteika-export.json (${file.lengthSync()} bytes)')),
+          SnackBar(
+            backgroundColor: const Color(0xFF13151A),
+            content: Text(
+              'Export saved to documents: noteika-export.json (${file.lengthSync()} bytes)',
+              style: const TextStyle(color: Color(0xFFA78BFA)),
+            ),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
+          SnackBar(
+            backgroundColor: const Color(0xFF13151A),
+            content: Text('Export failed: $e', style: const TextStyle(color: Color(0xFFFE4A49))),
+          ),
         );
       }
     } finally {
@@ -148,7 +160,10 @@ class _AccountScreenState extends State<AccountScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
+          SnackBar(
+            backgroundColor: const Color(0xFF13151A),
+            content: Text('Delete failed: $e', style: const TextStyle(color: Color(0xFFFE4A49))),
+          ),
         );
       }
     } finally {
@@ -169,10 +184,12 @@ class _AccountScreenState extends State<AccountScreen> {
         : null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         title: const Text('Your Account'),
-        backgroundColor: const Color(0xFF161B22),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -180,12 +197,12 @@ class _AccountScreenState extends State<AccountScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Account',
+              'ACCOUNT',
               style: TextStyle(
-                color: Color(0xFF58A6FF),
+                color: Color(0xFFA78BFA),
                 fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-                fontSize: 14,
+                letterSpacing: 1.5,
+                fontSize: 12,
               ),
             ),
             const SizedBox(height: 8),
@@ -195,27 +212,33 @@ class _AccountScreenState extends State<AccountScreen> {
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 28,
+                letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 24),
 
             // Profile Card
             _buildCard(
-              title: 'Profile',
+              title: 'Profile Details',
               child: Column(
                 children: [
                   _buildProfileRow('Name', u?['full_name'] ?? '—'),
+                  const Divider(color: Color(0xFF1F2228), height: 1),
                   _buildProfileRow('Email', u?['email'] ?? '—'),
-                  _buildProfileRow('Plan', isPro ? 'Pro' : 'Free'),
+                  const Divider(color: Color(0xFF1F2228), height: 1),
+                  _buildProfileRow('Plan', isPro ? 'Pro Access' : 'Free tier'),
+                  const Divider(color: Color(0xFF1F2228), height: 1),
                   _buildProfileRow(
                     'Notes saved',
-                    isPro ? '$noteCount (unlimited)' : '$noteCount / $noteLimit free',
+                    isPro ? '$noteCount (unlimited)' : '$noteCount / $noteLimit',
                   ),
-                  if (memberSince != null)
+                  if (memberSince != null) ...[
+                    const Divider(color: Color(0xFF1F2228), height: 1),
                     _buildProfileRow(
                       'Member since',
                       '${memberSince.month}/${memberSince.day}/${memberSince.year}',
                     ),
+                  ],
                 ],
               ),
             ),
@@ -223,28 +246,40 @@ class _AccountScreenState extends State<AccountScreen> {
 
             // Billing Card
             _buildCard(
-              title: 'Billing',
+              title: 'Billing & Plan Upgrade',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
                     isPro
-                        ? 'You have Pro — unlimited encrypted captures and semantic search.'
-                        : 'Free plan includes $noteLimit encrypted captures. Upgrade to keep saving unlimited notes.',
-                    style: const TextStyle(color: Color(0xFF8B949E), fontSize: 14, height: 1.4),
+                        ? 'Thank you for supporting Noteika! You have active Pro access with unlimited encrypted captures and semantic search.'
+                        : 'Free plan includes a limit of $noteLimit encrypted captures. Upgrade to Pro to support development and save unlimited notes.',
+                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14, height: 1.45),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   if (_billingError != null) ...[
-                    Text(_billingError!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1FFE4A49),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0x66FE4A49)),
+                      ),
+                      child: Text(
+                        _billingError!,
+                        style: const TextStyle(color: Color(0xFFFE4A49), fontSize: 13),
+                      ),
+                    ),
                   ],
                   if (u?['stripe_enabled'] == true)
-                    FilledButton(
+                    ElevatedButton(
                       onPressed: _billingLoading ? null : _manageBilling,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: isPro ? const Color(0xFF21262D) : const Color(0xFF1F6FEB),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isPro ? const Color(0xFF1F2228) : const Color(0xFF8B5CF6),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: _billingLoading
                           ? const SizedBox(
@@ -256,8 +291,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     )
                   else
                     const Text(
-                      'Billing is not configured on this server yet.',
-                      style: TextStyle(color: Color(0xFF8B949E), fontSize: 13, fontStyle: FontStyle.italic),
+                      'Billing details are not configured on this server.',
+                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 13, fontStyle: FontStyle.italic),
                     ),
                 ],
               ),
@@ -266,60 +301,82 @@ class _AccountScreenState extends State<AccountScreen> {
 
             // Search Sensitivity Card
             _buildCard(
-              title: 'Search sensitivity',
+              title: 'Search Match Sensitivity',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'How closely a capture must match your query to appear in search results.',
-                    style: TextStyle(color: Color(0xFF8B949E), fontSize: 14, height: 1.4),
+                    'Adjust how closely note contents must dynamically match semantic queries to display in FTS search.',
+                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14, height: 1.45),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        'Minimum match:',
-                        style: TextStyle(color: Colors.white, fontSize: 14),
+                        'Minimum match accuracy:',
+                        style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
                       ),
                       Text(
                         '$_searchMinPct%',
                         style: const TextStyle(
-                          color: Color(0xFF58A6FF),
+                          color: Color(0xFFA78BFA),
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                       ),
                     ],
                   ),
-                  Slider(
-                    value: _searchMinPct.toDouble(),
-                    min: 50,
-                    max: 85,
-                    divisions: 7,
-                    onChanged: (val) {
-                      setState(() => _searchMinPct = val.round());
-                    },
+                  const SizedBox(height: 8),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: const Color(0xFF8B5CF6),
+                      inactiveTrackColor: const Color(0xFF1F2228),
+                      thumbColor: const Color(0xFF8B5CF6),
+                      overlayColor: const Color(0xFF8B5CF6).withOpacity(0.15),
+                      activeTickMarkColor: Colors.transparent,
+                      inactiveTickMarkColor: Colors.transparent,
+                      trackHeight: 4,
+                    ),
+                    child: Slider(
+                      value: _searchMinPct.toDouble(),
+                      min: 50,
+                      max: 85,
+                      divisions: 7,
+                      onChanged: (val) {
+                        setState(() => _searchMinPct = val.round());
+                      },
+                    ),
                   ),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('50% broad', style: TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
-                      Text('70% default', style: TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
-                      Text('85% strict', style: TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _searchSensitivityHint(_searchMinPct),
-                    style: const TextStyle(
-                      color: Color(0xFF8B949E),
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                      height: 1.35,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: const [
+                        Text('50% broad', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+                        Text('70% default', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+                        Text('85% strict', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0B0D),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF1F2228)),
+                    ),
+                    child: Text(
+                      _searchSensitivityHint(_searchMinPct),
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -327,13 +384,13 @@ class _AccountScreenState extends State<AccountScreen> {
                         onPressed: () => setState(() => _searchMinPct = 70),
                         child: const Text('Reset to 70%'),
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton(
+                      const SizedBox(width: 12),
+                      ElevatedButton(
                         onPressed: _settingsSaving ? null : _saveSettings,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF1F6FEB),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF8B5CF6),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         child: _settingsSaving
                             ? const SizedBox(
@@ -352,22 +409,23 @@ class _AccountScreenState extends State<AccountScreen> {
 
             // Data Card
             _buildCard(
-              title: 'Data backup',
+              title: 'Data Export & Backup',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Download all your captures as a JSON file to your device.',
-                    style: TextStyle(color: Color(0xFF8B949E), fontSize: 14, height: 1.4),
+                    'Export all encrypted captures locally as formatted JSON at any time.',
+                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14, height: 1.45),
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton.icon(
-                    icon: const Icon(Icons.download),
-                    label: Text(_exporting ? 'Preparing export...' : 'Download my data'),
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: Text(_exporting ? 'Preparing export...' : 'Export local JSON backup'),
                     onPressed: _exporting ? null : _exportData,
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF30363D)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      side: const BorderSide(color: Color(0xFF1F2228)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
                 ],
@@ -377,23 +435,24 @@ class _AccountScreenState extends State<AccountScreen> {
 
             // Danger Zone Card
             _buildCard(
-              title: 'Delete account',
+              title: 'Danger Zone',
               isDanger: true,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Permanently delete your account and all captures. This action is irreversible and vault recovery is impossible.',
-                    style: TextStyle(color: Color(0xFF8B949E), fontSize: 14, height: 1.4),
+                    'Permanently delete your account and remove all captures. This action is immediate, final, and cannot be undone.',
+                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14, height: 1.45),
                   ),
                   const SizedBox(height: 16),
                   if (!_confirmDelete)
                     ElevatedButton(
                       onPressed: () => setState(() => _confirmDelete = true),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFDA3637),
+                        backgroundColor: const Color(0xFFEF4444),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: const Text('Delete my account'),
                     )
@@ -407,7 +466,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       controller: _deleteController,
                       decoration: const InputDecoration(
                         hintText: 'DELETE',
-                        fillColor: Color(0xFF0D1117),
+                        fillColor: Color(0xFF0A0B0D),
                       ),
                       onChanged: (_) => setState(() {}),
                     ),
@@ -422,17 +481,20 @@ class _AccountScreenState extends State<AccountScreen> {
                               _deleteController.clear();
                             });
                           },
-                          child: const Text('Cancel', style: TextStyle(color: Color(0xFF8B949E))),
+                          child: const Text('Cancel', style: TextStyle(color: Color(0xFF9CA3AF))),
                         ),
-                        const SizedBox(width: 8),
-                        FilledButton(
+                        const SizedBox(width: 12),
+                        ElevatedButton(
                           onPressed: _deleteController.text != 'DELETE' || _deleting
                               ? null
                               : _deleteAccount,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFDA3637),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFEF4444),
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            disabledBackgroundColor: const Color(0xFF1F2228),
+                            disabledForegroundColor: const Color(0xFF6B7280),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           ),
                           child: _deleting
                               ? const SizedBox(
@@ -463,10 +525,10 @@ class _AccountScreenState extends State<AccountScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: const Color(0xFF13151A),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isDanger ? const Color(0xFFDA3637) : const Color(0xFF30363D),
+          color: isDanger ? const Color(0xFFEF4444).withOpacity(0.3) : const Color(0xFF1F2228),
         ),
       ),
       child: Column(
@@ -475,9 +537,10 @@ class _AccountScreenState extends State<AccountScreen> {
           Text(
             title,
             style: TextStyle(
-              color: isDanger ? const Color(0xFFDA3637) : Colors.white,
+              color: isDanger ? const Color(0xFFEF4444) : Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: 18,
+              fontSize: 16,
+              letterSpacing: -0.3,
             ),
           ),
           const SizedBox(height: 16),
@@ -489,15 +552,15 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Widget _buildProfileRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 100,
+            width: 110,
             child: Text(
               label,
-              style: const TextStyle(color: Color(0xFF8B949E), fontSize: 14),
+              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
           Expanded(

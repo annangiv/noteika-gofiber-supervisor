@@ -8,12 +8,16 @@ import '../services/noteika_api.dart';
 import '../services/vault_crypto.dart';
 import '../services/fingerprint_service.dart';
 import '../services/embedding_service.dart';
+import '../services/iap_service.dart';
 import '../utils/capture_content.dart';
 
 class AppState extends ChangeNotifier {
-  AppState(this.api);
+  AppState(this.api) {
+    iapService = IapService(this);
+  }
 
   final NoteikaApi api;
+  late final IapService iapService;
   final _storage = const FlutterSecureStorage();
 
   static const _vaultSetupKey = 'noteika_vault_setup_done';
@@ -60,6 +64,11 @@ class AppState extends ChangeNotifier {
     user = await api.currentUser();
     final v = await _storage.read(key: _hasSeenLandingKey);
     hasSeenLanding = v == '1';
+
+    if (!kIsWeb) {
+      iapService.initialize();
+    }
+
     authLoading = false;
     notifyListeners();
   }
@@ -73,6 +82,10 @@ class AppState extends ChangeNotifier {
   Future<void> resetLandingState() async {
     await _storage.delete(key: _hasSeenLandingKey);
     hasSeenLanding = false;
+    notifyListeners();
+  }
+
+  void notify() {
     notifyListeners();
   }
 
@@ -469,6 +482,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     embeddingService.dispose();
+    iapService.dispose();
     super.dispose();
   }
 }

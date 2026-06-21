@@ -32,15 +32,63 @@ class NoteikaApp extends StatelessWidget {
         theme: ThemeData(
           brightness: Brightness.dark,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF58A6FF),
+            seedColor: const Color(0xFF8B5CF6),
             brightness: Brightness.dark,
-            surface: const Color(0xFF161B22),
+            primary: const Color(0xFF8B5CF6),
+            surface: const Color(0xFF13151A),
           ),
-          scaffoldBackgroundColor: const Color(0xFF0D1117),
+          scaffoldBackgroundColor: const Color(0xFF0A0B0D),
+          cardColor: const Color(0xFF13151A),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF0A0B0D),
+            elevation: 0,
+            centerTitle: false,
+            titleTextStyle: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            iconTheme: IconThemeData(color: Colors.white),
+          ),
           inputDecorationTheme: InputDecorationTheme(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             filled: true,
-            fillColor: const Color(0xFF0D1117),
+            fillColor: const Color(0xFF13151A),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF1F2228), width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF1F2228), width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF8B5CF6), width: 1.5),
+            ),
+            labelStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+            hintStyle: const TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7C3AED),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFF1F2228)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFA78BFA),
+              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
         home: const _RootGate(),

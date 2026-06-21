@@ -19,21 +19,21 @@ class _LandingScreenState extends State<LandingScreen> {
       'tagline': 'Notes that resurface before you duplicate yourself.',
       'desc': 'Noteika checks text similarity in real-time as you draft snippets, warning you instantly if similar thoughts already exist in your docket.',
       'icon': Icons.copy_all_rounded,
-      'color': const Color(0xFFD4A32D), // Amber
+      'color': const Color(0xFFF59E0B), // Amber
     },
     {
       'title': 'Semantic Search',
       'tagline': 'Search by meaning, not just exact keywords.',
       'desc': 'A quantized BGE-small neural network runs on-device. Search queries are mapped to vectors to find semantically related content instantly.',
       'icon': Icons.psychology_rounded,
-      'color': const Color(0xFF58A6FF), // Blue
+      'color': const Color(0xFF8B5CF6), // Violet
     },
     {
       'title': 'E2E Zero-Knowledge',
       'tagline': 'Your knowledge remains exclusively yours.',
       'desc': 'Plaintext notes and vector embeddings are encrypted on-device with AES-GCM-256 before syncing. Noteika servers never see your notes.',
       'icon': Icons.security_rounded,
-      'color': const Color(0xFF3FB950), // Green
+      'color': const Color(0xFF10B981), // Emerald
     },
   ];
 
@@ -48,7 +48,7 @@ class _LandingScreenState extends State<LandingScreen> {
     final state = context.watch<AppState>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: const Color(0xFF090A0C),
       body: SafeArea(
         child: Column(
           children: [
@@ -60,13 +60,13 @@ class _LandingScreenState extends State<LandingScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
+                    color: const Color(0xFF13151A),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF30363D)),
+                    border: Border.all(color: const Color(0xFF1F2228)),
                   ),
                   child: ShaderMask(
                     shaderCallback: (bounds) => const LinearGradient(
-                      colors: [Color(0xFF58A6FF), Color(0xFFBC8CFF)],
+                      colors: [Color(0xFF8B5CF6), Color(0xFFA78BFA)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ).createShader(bounds),
@@ -90,10 +90,10 @@ class _LandingScreenState extends State<LandingScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
+            const Text(
               'Save once, find by meaning.',
               style: TextStyle(
-                color: const Color(0xFF8B949E),
+                color: Color(0xFF9CA3AF),
                 fontSize: 14,
                 letterSpacing: 0.5,
               ),
@@ -112,10 +112,11 @@ class _LandingScreenState extends State<LandingScreen> {
                   final feature = _features[index];
                   return SingleChildScrollView(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          const SizedBox(height: 16),
                           // Animated Glow Icon
                           TweenAnimationBuilder<double>(
                             tween: Tween(begin: 0.0, end: 1.0),
@@ -133,17 +134,17 @@ class _LandingScreenState extends State<LandingScreen> {
                               height: 100,
                               width: 100,
                               decoration: BoxDecoration(
-                                color: feature['color'].withOpacity(0.08),
+                                color: feature['color'].withOpacity(0.06),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: feature['color'].withOpacity(0.3),
+                                  color: feature['color'].withOpacity(0.25),
                                   width: 2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: feature['color'].withOpacity(0.1),
-                                    blurRadius: 20,
-                                    spreadRadius: 2,
+                                    color: feature['color'].withOpacity(0.08),
+                                    blurRadius: 24,
+                                    spreadRadius: 4,
                                   ),
                                 ],
                               ),
@@ -154,7 +155,7 @@ class _LandingScreenState extends State<LandingScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 32),
                           // Feature Title
                           Text(
                             feature['title'],
@@ -180,16 +181,16 @@ class _LandingScreenState extends State<LandingScreen> {
                               textAlign: TextAlign.center,
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
                           // Feature Description
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
                               feature['desc'],
                               style: const TextStyle(
-                                color: Color(0xFF8B949E),
-                                fontSize: 13,
-                                height: 1.4,
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 13.5,
+                                height: 1.45,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -210,13 +211,13 @@ class _LandingScreenState extends State<LandingScreen> {
                 (index) => AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  height: 8,
-                  width: _currentPage == index ? 24 : 8,
+                  height: 6,
+                  width: _currentPage == index ? 20 : 6,
                   decoration: BoxDecoration(
                     color: _currentPage == index
-                        ? const Color(0xFF58A6FF)
-                        : const Color(0xFF30363D),
-                    borderRadius: BorderRadius.circular(4),
+                        ? const Color(0xFF8B5CF6)
+                        : const Color(0xFF1F2228),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ),
@@ -228,13 +229,20 @@ class _LandingScreenState extends State<LandingScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 50,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF1F6FEB), Color(0xFF58A6FF)],
+                      colors: [Color(0xFF7C3AED), Color(0xFF8B5CF6)],
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF7C3AED).withOpacity(0.35),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: ElevatedButton(
                     onPressed: () => state.markLandingSeen(),
@@ -257,7 +265,7 @@ class _LandingScreenState extends State<LandingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             
             // Secondary Skip to Login Action
             TextButton(
@@ -265,7 +273,7 @@ class _LandingScreenState extends State<LandingScreen> {
               child: const Text(
                 'Already have an account? Sign in',
                 style: TextStyle(
-                  color: Color(0xFF58A6FF),
+                  color: Color(0xFFA78BFA),
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),

@@ -85,6 +85,7 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/auth/:provider/callback", authHandler.Callback)
 	s.app.Get("/auth/logout", authHandler.Logout)
 	s.app.Post("/api/auth/dev-login", authHandler.DevLogin)
+	s.app.Post("/api/auth/google-native", authHandler.GoogleNativeLogin)
 
 	// Stripe webhook (no session auth — verified by signature)
 	s.app.Post("/webhooks/stripe", billingHandler.Webhook)
@@ -119,6 +120,7 @@ func (s *Server) Start(port string) error {
 	api.Get("/billing/status", billingHandler.BillingStatus)
 	api.Post("/billing/checkout", billingHandler.CreateCheckout)
 	api.Post("/billing/portal", billingHandler.CreatePortal)
+	api.Post("/billing/verify-iap", billingHandler.VerifyIAP)
 
 	// Debug & Telemetry
 	api.Post("/debug/crash", debugHandler.Crash)

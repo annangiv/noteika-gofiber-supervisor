@@ -97,6 +97,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.2.0"
+  desktop_webview_window:
+    dependency: transitive
+    description:
+      name: desktop_webview_window
+      sha256: b6fdae2cbf9571879b1761c12f27facaf82e22d0bdc74d049907c2a09a432957
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0"
   dio:
     dependency: "direct main"
     description:
@@ -219,11 +227,75 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_web_auth_2:
+    dependency: "direct main"
+    description:
+      name: flutter_web_auth_2
+      sha256: "8f9303471dcd96670878c9b7c0c4e14c37595b2add67465f6a868f17a5872dfc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.0.3"
+  flutter_web_auth_2_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_web_auth_2_platform_interface
+      sha256: ba0fbba55bffb47242025f96852ad1ffba34bc451568f56ef36e613612baffab
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.0.0"
   flutter_web_plugins:
     dependency: transitive
     description: flutter
     source: sdk
     version: "0.0.0"
+  google_identity_services_web:
+    dependency: transitive
+    description:
+      name: google_identity_services_web
+      sha256: "5d187c46dc59e02646e10fe82665fc3884a9b71bc1c90c2b8b749316d33ee454"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.3+1"
+  google_sign_in:
+    dependency: "direct main"
+    description:
+      name: google_sign_in
+      sha256: d0a2c3bcb06e607bb11e4daca48bd4b6120f0bbc4015ccebbe757d24ea60ed2a
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.3.0"
+  google_sign_in_android:
+    dependency: transitive
+    description:
+      name: google_sign_in_android
+      sha256: d5e23c56a4b84b6427552f1cf3f98f716db3b1d1a647f16b96dbb5b93afa2805
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.2.1"
+  google_sign_in_ios:
+    dependency: transitive
+    description:
+      name: google_sign_in_ios
+      sha256: "102005f498ce18442e7158f6791033bbc15ad2dcc0afa4cf4752e2722a516c96"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.9.0"
+  google_sign_in_platform_interface:
+    dependency: transitive
+    description:
+      name: google_sign_in_platform_interface
+      sha256: "5f6f79cf139c197261adb6ac024577518ae48fdff8e53205c5373b5f6430a8aa"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.5.0"
+  google_sign_in_web:
+    dependency: transitive
+    description:
+      name: google_sign_in_web
+      sha256: "460547beb4962b7623ac0fb8122d6b8268c951cf0b646dd150d60498430e4ded"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.4+4"
   hooks:
     dependency: transitive
     description:
@@ -232,6 +304,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.2"
+  http:
+    dependency: transitive
+    description:
+      name: http
+      sha256: "87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.6.0"
   http_parser:
     dependency: transitive
     description:
@@ -240,6 +320,38 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  in_app_purchase:
+    dependency: "direct main"
+    description:
+      name: in_app_purchase
+      sha256: "0e9510b80b0074e89ab0a8e0fc901439b779dc9ae575ab8d419253c6e1627716"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.3.0"
+  in_app_purchase_android:
+    dependency: transitive
+    description:
+      name: in_app_purchase_android
+      sha256: eb8f551039481d1b265f12fa54f5ab5dd4f13ec5444a468b85a3793517a37fda
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.1"
+  in_app_purchase_platform_interface:
+    dependency: transitive
+    description:
+      name: in_app_purchase_platform_interface
+      sha256: "0b0076cac8ce4fa7048f01e76af8b123aeb6a7c4e0dea2a5206d6664454f3e36"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.1"
+  in_app_purchase_storekit:
+    dependency: transitive
+    description:
+      name: in_app_purchase_storekit
+      sha256: "5f9d59c86c15f56429a4fdf09097c99d5b412510e1fcf80cf874fc9638fab369"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.10"
   intl:
     dependency: "direct main"
     description:
@@ -272,6 +384,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.7"
+  json_annotation:
+    dependency: transitive
+    description:
+      name: json_annotation
+      sha256: "2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.12.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -629,46 +749,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
-  webview_cookie_manager:
-    dependency: "direct main"
-    description:
-      name: webview_cookie_manager
-      sha256: "425a9feac5cd2cb62a71da3dda5ac2eaf9ece5481ee8d79f3868dc5ba8223ad3"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.6"
-  webview_flutter:
-    dependency: "direct main"
-    description:
-      name: webview_flutter
-      sha256: e4d3474277c5043f5f3100ed27d94ad693abfd5c602b0221c719a4497e4ba1e4
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.14.0"
-  webview_flutter_android:
-    dependency: transitive
-    description:
-      name: webview_flutter_android
-      sha256: a97db7a44f8e71af2f3971c45550a08cce1fb60059c1b8e534251e6cfb753490
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.13.0"
-  webview_flutter_platform_interface:
-    dependency: transitive
-    description:
-      name: webview_flutter_platform_interface
-      sha256: "1221c1b12f5278791042f2ec2841743784cf25c5a644e23d6680e5d718824f04"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.15.1"
-  webview_flutter_wkwebview:
-    dependency: transitive
-    description:
-      name: webview_flutter_wkwebview
-      sha256: c879dd64b87c452aa84381b244d5469da57ba7e8cca6884c7b1e0d406372c12d
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.26.0"
   win32:
     dependency: transitive
     description:
@@ -677,6 +757,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.15.0"
+  window_to_front:
+    dependency: transitive
+    description:
+      name: window_to_front
+      sha256: "14fad8984db4415e2eeb30b04bb77140b180e260d6cb66b26de126a8657a9241"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.4"
   xdg_directories:
     dependency: transitive
     description:

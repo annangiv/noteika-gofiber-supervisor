@@ -68,6 +68,36 @@ class NoteikaApi {
     return Map<String, dynamic>.from(res.data as Map);
   }
 
+  /// Exchange a verified Google ID Token from native SDK for a Noteika session.
+  Future<Map<String, dynamic>> googleNativeLogin(String idToken) async {
+    final res = await _dio.post('/api/auth/google-native', data: {
+      'id_token': idToken,
+    });
+    if (res.statusCode != 200) {
+      final err = res.data is Map ? (res.data as Map)['error'] : null;
+      throw Exception(err?.toString() ?? 'Google native login failed (${res.statusCode})');
+    }
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  /// Securely verify an Android / iOS native in-app purchase with the backend.
+  Future<Map<String, dynamic>> verifyIapPurchase({
+    required String platform,
+    required String purchaseToken,
+    required String productId,
+  }) async {
+    final res = await _dio.post('/api/billing/verify-iap', data: {
+      'platform': platform,
+      'purchase_token': purchaseToken,
+      'product_id': productId,
+    });
+    if (res.statusCode != 200) {
+      final err = res.data is Map ? (res.data as Map)['error'] : null;
+      throw Exception(err?.toString() ?? 'IAP verification failed (${res.statusCode})');
+    }
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   Future<Uint8List> fetchVaultSalt() async {
     final res = await _dio.get('/api/vault/salt');
     final saltB64 = (res.data as Map)['salt'] as String;
