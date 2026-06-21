@@ -200,6 +200,8 @@ export default function NotesPage() {
       triggerPrivacyFlow('search');
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
+    } finally {
+      setIsSearching(false);
     }
   }, [searchMinSimilarity, vaultKey, triggerPrivacyFlow]);
 
@@ -251,17 +253,24 @@ export default function NotesPage() {
     e.preventDefault();
     if (!formBody.trim()) return;
 
-    // Always re-check docket at save time — typing debounce may have missed a race
-    const similar = await findSimilarInDocket(formBody);
-    const strongMatches = similar.filter((item) => item.similarity >= SIMILARITY.DUPLICATE_SAVE);
+    // Spinner covers the duplicate check too — otherwise the button looks idle
+    // during that async gap before performSave() turns it on itself.
+    setIsSaving(true);
+    try {
+      // Always re-check docket at save time — typing debounce may have missed a race
+      const similar = await findSimilarInDocket(formBody);
+      const strongMatches = similar.filter((item) => item.similarity >= SIMILARITY.DUPLICATE_SAVE);
 
-    if (strongMatches.length > 0) {
-      setSaveDuplicateConfirm(strongMatches);
-      setDuplicateWarning(similar);
-      return;
+      if (strongMatches.length > 0) {
+        setSaveDuplicateConfirm(strongMatches);
+        setDuplicateWarning(similar);
+        return;
+      }
+
+      await performSave();
+    } finally {
+      setIsSaving(false);
     }
-
-    await performSave();
   };
 
   // 7. Update existing capture
@@ -479,7 +488,7 @@ export default function NotesPage() {
         <div className="feed-column">
           {/* SEARCH BAR */}
           <div className="search-container">
-            <i className="fa-solid fa-magnifying-glass search-icon"></i>
+            <i className={isSearching ? 'fa-solid fa-spinner fa-spin search-icon' : 'fa-solid fa-magnifying-glass search-icon'}></i>
             <input
               type="text"
               id="search-input"
@@ -972,7 +981,7 @@ export default function NotesPage() {
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
-            <div className="modal-body" style={{ padding: '16px 0' }}>
+            <div className="modal-body">
               <p style={{ marginBottom: '12px', color: 'var(--text-muted)' }}>
                 You already saved something very similar. View the existing capture instead of duplicating yourself.
               </p>
@@ -1023,7 +1032,7 @@ export default function NotesPage() {
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
-            <div className="modal-body" style={{ padding: '24px 0' }}>
+            <div className="modal-body">
               {deletingCapture.deleted_at > 0 ? (
                 <p>
                   Are you sure you want to <strong>permanently delete</strong> the capture{' '}
@@ -1070,7 +1079,7 @@ export default function NotesPage() {
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
-            <div className="modal-body" style={{ padding: '24px 0' }}>
+            <div className="modal-body">
               <p>
                 Are you sure you want to <strong>permanently delete all items</strong> in the Trash?
                 <br />
