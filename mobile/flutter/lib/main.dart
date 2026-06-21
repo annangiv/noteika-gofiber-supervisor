@@ -4,6 +4,10 @@ import 'package:provider/provider.dart';
 import 'screens/inbox_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/vault_unlock_screen.dart';
+import 'screens/about_screen.dart';
+import 'screens/pricing_screen.dart';
+import 'screens/account_screen.dart';
+import 'screens/landing_screen.dart';
 import 'services/noteika_api.dart';
 import 'state/app_state.dart';
 
@@ -41,9 +45,13 @@ class NoteikaApp extends StatelessWidget {
         ),
         home: const _RootGate(),
         routes: {
+          '/landing': (_) => const LandingScreen(),
           '/login': (_) => const LoginScreen(),
           '/vault': (_) => const VaultUnlockScreen(),
           '/inbox': (_) => const InboxScreen(),
+          '/about': (_) => const AboutScreen(),
+          '/pricing': (_) => const PricingScreen(),
+          '/account': (_) => const AccountScreen(),
         },
       ),
     );
@@ -62,7 +70,12 @@ class _RootGate extends StatelessWidget {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    if (!state.isLoggedIn) return const LoginScreen();
+    if (!state.isLoggedIn) {
+      if (!state.hasSeenLanding) {
+        return const LandingScreen();
+      }
+      return const LoginScreen();
+    }
     if (!state.isUnlocked) return const VaultUnlockScreen();
     return const InboxScreen();
   }

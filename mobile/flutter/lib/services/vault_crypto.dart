@@ -95,4 +95,66 @@ class VaultCrypto {
     }
     return out;
   }
+
+  static Future<String> encryptEmbedding(
+    SecretKey key,
+    List<double> embedding,
+  ) async {
+    final iv = _aesGcm.newNonce();
+    final floatBytes = _floatsToBytes(embedding);
+    final secretBox = await _aesGcm.encrypt(
+      floatBytes,
+      secretKey: key,
+      nonce: iv,
+    );
+    final combined = Uint8List(iv.length + secretBox.cipherText.length + secretBox.mac.bytes.length);
+    combined.setRange(0, iv.length, iv);
+    combined.setRange(iv.length, iv.length + secretBox.cipherText.length, secretBox.cipherText);
+    combined.setRange(
+      iv.length + secretBox.cipherText.length,
+      combined.length,
+      secretBox.mac.bytes,
+    );
+    return base64Encode(combined);
+  }
+
+  static Future<List<double>?> decryptEmbedding(
+    SecretKey key,
+    String ciphertextB64,
+  ) async {
+    if (ciphertextB64.isEmpty) return null;
+    final combined = base64Decode(ciphertextB64);
+    if (combined.length < 12 + 16) return null;
+
+    const ivLen = 12;
+    const macLen = 16;
+    final iv = combined.sublist(0, ivLen);
+    final cipherText = combined.sublist(ivLen, combined.length - macLen);
+    final mac = Mac(combined.sublist(combined.length - macLen));
+
+    final plain = await _aesGcm.decrypt(
+      SecretBox(cipherText, nonce: iv, mac: mac),
+      secretKey: key,
+    );
+    return _bytesToFloats(Uint8List.fromList(plain));
+  }
+
+  static Uint8List _floatsToBytes(List<double> floats) {
+    final bytes = Uint8List(floats.length * 4);
+    final bd = ByteData.view(bytes.buffer);
+    for (var i = 0; i < floats.length; i++) {
+      bd.setFloat32(i * 4, floats[i], Endian.little);
+    }
+    return bytes;
+  }
+
+  static List<double> _bytesToFloats(Uint8List bytes) {
+    final count = bytes.length ~/ 4;
+    final floats = List<double>.filled(count, 0.0);
+    final bd = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.length);
+    for (var i = 0; i < count; i++) {
+      floats[i] = bd.getFloat32(i * 4, Endian.little);
+    }
+    return floats;
+  }
 }

@@ -18,7 +18,7 @@ class ProjectRef {
 }
 
 class NoteikaApi {
-  NoteikaApi._(this._dio, this._cookieJar);
+  NoteikaApi(this._dio, this._cookieJar);
 
   final Dio _dio;
   final CookieJar _cookieJar;
@@ -36,7 +36,7 @@ class NoteikaApi {
       headers: {'Accept': 'application/json'},
     ));
     dio.interceptors.add(CookieManager(jar));
-    return NoteikaApi._(dio, jar);
+    return NoteikaApi(dio, jar);
   }
 
   String get baseUrl => ApiConfig.baseUrl;
@@ -127,14 +127,14 @@ class NoteikaApi {
     return VaultCrypto.decryptCaptureList(vaultKey, raw);
   }
 
-  /// Save encrypted capture. Fingerprint + encrypted_vector require on-device
-  /// BGE embeddings (not yet in Flutter) — omitted for v0.1; search is web-only.
   Future<Map<String, dynamic>> createCapture({
     required SecretKey vaultKey,
     required String body,
     String projectName = 'Inbox',
     List<String> tags = const [],
     String sourceUrl = '',
+    String? fingerprint,
+    String? encryptedVector,
   }) async {
     final trimmed = body.trim();
     if (trimmed.isEmpty) throw Exception('Empty note body');
@@ -155,6 +155,8 @@ class NoteikaApi {
       'ciphertext': ciphertext,
       'project_id': projectId,
       'type': cType,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (encryptedVector != null) 'encrypted_vector': encryptedVector,
     });
 
     if (res.statusCode != 201) {
@@ -164,7 +166,91 @@ class NoteikaApi {
     return Map<String, dynamic>.from(res.data as Map);
   }
 
+  Future<Map<String, dynamic>> updateCapture({
+    required String id,
+    required SecretKey vaultKey,
+    required String body,
+    String projectName = 'Inbox',
+    List<String> tags = const [],
+    String sourceUrl = '',
+    String? fingerprint,
+    String? encryptedVector,
+  }) async {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) throw Exception('Empty note body');
+
+    final mergedTags = mergeTags([tags, parseHashtags(trimmed)]);
+    final title = generateAutoTitle(trimmed);
+    final cType = classifyContentType(trimmed);
+    final projectId = await resolveProjectId(vaultKey, projectName);
+
+    final ciphertext = await VaultCrypto.encryptCapturePayload(vaultKey, {
+      'title': title,
+      'body': trimmed,
+      'source_url': sourceUrl,
+      'tags': mergedTags,
+    });
+
+    final res = await _dio.patch('/api/captures/$id', data: {
+      'ciphertext': ciphertext,
+      'project_id': projectId,
+      'type': cType,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (encryptedVector != null) 'encrypted_vector': encryptedVector,
+    });
+
+    if (res.statusCode != 200) {
+      final err = res.data is Map ? (res.data as Map)['error'] : null;
+      throw Exception(err?.toString() ?? 'Update failed (${res.statusCode})');
+    }
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> searchCaptures({
+    required String queryFingerprint,
+    String projectId = '',
+    int limit = 30,
+    String excludeId = '',
+  }) async {
+    final res = await _dio.post('/api/captures/search', data: {
+      'query_fingerprint': queryFingerprint,
+      'project_id': projectId,
+      'limit': limit,
+      'exclude_id': excludeId,
+    });
+    if (res.statusCode != 200) {
+      throw Exception('Search failed (${res.statusCode})');
+    }
+    final raw = (res.data as List).cast<dynamic>();
+    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   Future<void> deleteCapture(String id) async {
     await _dio.delete('/api/captures/$id');
+  }
+
+  Future<void> saveSettings({required double searchMinSimilarity}) async {
+    await _dio.patch('/api/account/settings', data: {
+      'search_min_similarity': searchMinSimilarity,
+    });
+  }
+
+  Future<Map<String, dynamic>> checkoutStripe() async {
+    final res = await _dio.post('/api/billing/checkout');
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  Future<Map<String, dynamic>> openBillingPortal() async {
+    final res = await _dio.post('/api/billing/portal');
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  Future<List<dynamic>> exportData() async {
+    final res = await _dio.get('/api/account/export');
+    return res.data as List;
+  }
+
+  Future<void> deleteAccount() async {
+    await _dio.delete('/api/account');
   }
 }

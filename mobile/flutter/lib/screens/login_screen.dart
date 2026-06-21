@@ -1,7 +1,10 @@
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import 'webview_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -40,6 +43,44 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _startOAuth(String provider) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final state = context.read<AppState>();
+      final url = '${state.api.baseUrl}/auth/login/$provider';
+      final token = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => WebViewScreen(
+            url: url,
+            title: 'Sign in with ${provider == "github" ? "GitHub" : "Google"}',
+          ),
+        ),
+      );
+
+      if (token != null && token.isNotEmpty) {
+        final dir = await getApplicationDocumentsDirectory();
+        final jar = PersistCookieJar(storage: FileStorage('${dir.path}/.cookies/'));
+        final uri = Uri.parse(state.api.baseUrl);
+        final cookie = Cookie('keller_session', token)
+          ..domain = uri.host
+          ..path = '/';
+        await jar.saveFromResponse(uri, [cookie]);
+
+        await state.bootstrap();
+        if (mounted && state.isLoggedIn) {
+          Navigator.of(context).pushReplacementNamed('/vault');
+        }
+      }
+    } catch (e) {
+      setState(() => _error = 'OAuth login failed: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   void dispose() {
     _email.dispose();
@@ -49,8 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final base = context.read<AppState>().api.baseUrl;
-
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
@@ -63,14 +102,39 @@ class _LoginScreenState extends State<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Google and GitHub sign-in do not work inside the mobile app WebView — '
-              'Google blocks embedded browsers for security.',
-              style: TextStyle(color: Color(0xFF8B949E), height: 1.45),
+              'Sign in with your provider:',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Use dev sign-in below while testing against $base (requires ENVIRONMENT=development on the server).',
-              style: const TextStyle(color: Color(0xFF8B949E), height: 1.45),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.code),
+              label: const Text('Sign in with GitHub'),
+              onPressed: _loading ? null : () => _startOAuth('github'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: const BorderSide(color: Color(0xFF30363D)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.g_mobiledata_outlined, size: 28),
+              label: const Text('Sign in with Google'),
+              onPressed: _loading ? null : () => _startOAuth('google'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: const BorderSide(color: Color(0xFF30363D)),
+              ),
+            ),
+            const SizedBox(height: 32),
+            const Row(
+              children: [
+                Expanded(child: Divider(color: Color(0xFF30363D))),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('OR DEV SIGN IN', style: TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
+                ),
+                Expanded(child: Divider(color: Color(0xFF30363D))),
+              ],
             ),
             const SizedBox(height: 24),
             TextField(
