@@ -77,6 +77,7 @@ export function fingerprintEmbeddingB64(embedding) {
 
 /** True cosine similarity between two real (non-fingerprinted) embeddings. */
 export function cosineSimilarity(a, b) {
+  if (!a?.length || !b?.length || a.length !== b.length) return 0;
   let dot = 0;
   let normA = 0;
   let normB = 0;

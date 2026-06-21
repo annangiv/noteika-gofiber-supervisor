@@ -75,6 +75,9 @@ func (s *Server) Start(port string) error {
 	s.app.Get("/notes", pageHandler)
 	s.app.Get("/account", pageHandler)
 	s.app.Get("/import", pageHandler)
+	s.app.Get("/dev/import", func(c *fiber.Ctx) error {
+		return c.Redirect("/import", fiber.StatusMovedPermanently)
+	})
 	s.app.Get("/dashboard", pageHandler) // legacy redirect target
 
 	// Auth trigger and callback

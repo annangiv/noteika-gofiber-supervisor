@@ -5,7 +5,6 @@ services:
     container_name: noteika-go-app
     networks:
       - noteika-network
-      - proxy_net
     env_file:
       - .env
     volumes:

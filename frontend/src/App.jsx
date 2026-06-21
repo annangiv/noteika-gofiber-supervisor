@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import NotesPage from './pages/NotesPage';
 import AccountPage from './pages/AccountPage';
 import ImportPage from './pages/ImportPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 export default function App() {
   return (
@@ -43,7 +44,11 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/dev/import"
+          element={<Navigate to="/import" replace />}
+        />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       </BrowserRouter>
     </VaultProvider>

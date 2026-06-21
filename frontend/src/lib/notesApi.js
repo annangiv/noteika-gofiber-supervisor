@@ -1,7 +1,8 @@
 import { embedQuery, embedPassage } from './embeddings';
 import { decryptCaptureList, decryptCaptureRecord, decryptEmbedding } from './crypto';
-import { buildCaptureEmbeddingText } from './captureContent';
+import { buildCaptureEmbeddingText, formatTagsInput } from './captureContent';
 import { fingerprintEmbeddingB64, cosineSimilarity } from './fingerprint';
+import { textSimilarity, captureComparableText } from './textSimilarity';
 
 export const DEFAULT_SEARCH_MIN = 0.70;
 export const SEARCH_MIN_FLOOR = 0.50;
@@ -168,8 +169,19 @@ export async function searchCaptures(vaultKey, query, { projectId = '', minSimil
 
   const rescored = await Promise.all(candidates.map(async (item) => {
     const capture = await decryptCaptureRecord(vaultKey, item.capture);
-    const candidateEmbedding = await decryptEmbedding(vaultKey, item.capture.encrypted_vector);
-    return { capture, similarity: cosineSimilarity(embedding, candidateEmbedding) };
+    let candidateEmbedding = await decryptEmbedding(vaultKey, item.capture.encrypted_vector);
+    // Notes saved before encrypted_vector cache (or legacy) — re-embed once.
+    if (!candidateEmbedding?.length) {
+      const passageText = buildCaptureEmbeddingText(capture.body, formatTagsInput(capture.tags));
+      if (passageText.trim()) {
+        candidateEmbedding = await embedPassage(passageText.trim());
+      }
+    }
+    let similarity = cosineSimilarity(embedding, candidateEmbedding);
+    if (similarity === 0 && query?.trim()) {
+      similarity = textSimilarity(query, captureComparableText(capture));
+    }
+    return { capture, similarity };
   }));
 
   return rescored
@@ -178,22 +190,58 @@ export async function searchCaptures(vaultKey, query, { projectId = '', minSimil
     .slice(0, limit);
 }
 
+function mergeDuplicateResults(semantic, textHits, { limit = 5 } = {}) {
+  const byId = new Map();
+  for (const item of [...semantic, ...textHits]) {
+    const existing = byId.get(item.capture.id);
+    if (!existing || item.similarity > existing.similarity) {
+      byId.set(item.capture.id, item);
+    }
+  }
+  return [...byId.values()]
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
+function findTextDuplicateMatches(draftText, allCaptures, { minSimilarity, limit }) {
+  return allCaptures
+    .map((capture) => ({
+      capture,
+      similarity: textSimilarity(draftText, captureComparableText(capture)),
+    }))
+    .filter((item) => item.similarity >= minSimilarity)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
 /**
- * Duplicate check: embed draft as BGE query vs stored passage vectors (same text as save).
- * Asymmetric query↔passage avoids passage↔passage false positives between unrelated notes.
+ * Duplicate check: passage embedding + fingerprint (matches how notes are saved),
+ * plus client text similarity for notes missing fingerprints (pre-v2 deploy).
  */
 export async function findDuplicateMatches(formBody, formTags, vaultKey, { limit = 5 } = {}) {
   const embedText = buildCaptureEmbeddingText(formBody, formTags);
   if (!embedText.trim() || !vaultKey) return [];
 
-  const queryEmbedding = await embedQuery(embedText);
-  if (!queryEmbedding.length) return [];
+  const [allCaptures, passageEmbedding] = await Promise.all([
+    fetchAllDecryptedCaptures(vaultKey),
+    embedPassage(embedText),
+  ]);
 
-  return searchCaptures(vaultKey, '', {
-    queryEmbedding,
+  const textHits = findTextDuplicateMatches(embedText, allCaptures, {
     minSimilarity: SIMILARITY.DUPLICATE_WARN,
     limit,
   });
+
+  if (!passageEmbedding.length) return textHits;
+
+  const semantic = await searchCaptures(vaultKey, embedText, {
+    queryEmbedding: passageEmbedding,
+    minSimilarity: SIMILARITY.DUPLICATE_WARN,
+    limit: Math.max(limit, 30),
+    asPassage: true,
+  });
+
+  return mergeDuplicateResults(semantic, textHits, { limit });
 }
 
 /** Plain-language hint for the search sensitivity slider (pct = 50–85). */

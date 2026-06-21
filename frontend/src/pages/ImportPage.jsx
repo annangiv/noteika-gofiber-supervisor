@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import VaultGate from '../components/VaultGate';
 import { useVault } from '../context/VaultContext';
 import { importCapture } from '../lib/saveCapture';
@@ -74,27 +74,6 @@ function ImportInner({ user }) {
   };
 
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
-
-  if (!user?.pro_access) {
-    return (
-      <div className="import-page">
-        <header className="import-header">
-          <div>
-            <h1>Import notes</h1>
-            <p className="import-lead">
-              Bulk-import up to {MAX_FILES} markdown files at once — handy for migrating an
-              existing corpus of notes into Noteika.
-            </p>
-          </div>
-          <Link to="/notes" className="btn btn-primary">← Back to notes</Link>
-        </header>
-        <section className="glass-card import-section">
-          <p>Bulk import is a Pro feature.</p>
-          <Link to="/account" className="btn btn-primary">Upgrade to Pro</Link>
-        </section>
-      </div>
-    );
-  }
 
   return (
     <div className="import-page">
@@ -212,6 +191,9 @@ export default function ImportPage() {
   }, []);
 
   if (authLoading) return null;
+  if (user && !user.pro_access) {
+    return <Navigate to="/account" replace />;
+  }
 
   return (
     <VaultGate>

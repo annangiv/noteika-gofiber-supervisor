@@ -1,0 +1,30 @@
+name: noteika_mobile
+description: Noteika mobile — save once, find by meaning.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  dio: ^5.8.0
+  dio_cookie_manager: ^3.2.0
+  cookie_jar: ^4.0.8
+  path_provider: ^2.1.5
+  cryptography: ^2.7.0
+  flutter_secure_storage: ^9.2.4
+  provider: ^6.1.5
+  webview_flutter: ^4.13.0
+  intl: ^0.20.2
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

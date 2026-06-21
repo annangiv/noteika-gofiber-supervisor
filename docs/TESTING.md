@@ -193,7 +193,8 @@ Scopes: read:user, user:email
 | Symptom | Check |
 |---------|--------|
 | Search always empty | Model loaded? Re-save notes after fresh `data/` wipe (fingerprints stored on save). |
-| Every note flags as duplicate | Duplicate check uses **query↔passage** (not passage↔passage). Re-save notes after deploy. Unrelated notes (scenario 4) should not warn. |
+| Duplicate not detected for old notes | Notes saved **before** the fingerprint deploy lack `fingerprint`/`encrypted_vector` — duplicate check now falls back to client text similarity, but **re-save or edit** old notes once to backfill fingerprints for semantic paraphrase matching. |
+| Every note flags as duplicate | Unrelated notes (scenario 4) should not warn. If they do, lower duplicate thresholds or report a bug. |
 | Stale UI | Hard refresh after `docker compose up -d --build`. |
 
 ---

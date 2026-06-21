@@ -13,3 +13,7 @@ go-fiber-supervisor
 
 # Frontend build artifacts (built in Docker)
 frontend/node_modules/
+
+# Capacitor native projects (generated locally)
+frontend/ios/
+frontend/android/

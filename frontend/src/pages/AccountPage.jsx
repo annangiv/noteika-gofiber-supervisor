@@ -283,17 +283,17 @@ export default function AccountPage() {
             </button>
           </div>
 
+          {isPro && (
           <div className="account-card">
-            <h2>Import{!isPro && ' (Pro)'}</h2>
+            <h2>Import</h2>
             <p className="account-desc">
-              {isPro
-                ? 'Bulk-import up to 100 markdown files at once — handy for migrating an existing corpus.'
-                : 'Bulk-import up to 100 markdown files at once. Upgrade to Pro to unlock this.'}
+              Bulk-import up to 100 markdown files at once — handy for migrating an existing corpus.
             </p>
             <Link to="/import" className="btn btn-secondary">
-              {isPro ? 'Import notes' : 'Learn more'}
+              Import notes
             </Link>
           </div>
+          )}
 
           <div className="account-card">
             <h2>Session</h2>
