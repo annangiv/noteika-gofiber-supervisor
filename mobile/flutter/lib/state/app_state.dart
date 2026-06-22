@@ -34,6 +34,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, dynamic>? user;
   SecretKey? vaultKey;
   Uint8List? salt;
+  String? verifier;
   String? error;
   List<Map<String, dynamic>> captures = [];
   List<ProjectRef> projects = [NoteikaApi.inbox];
@@ -96,9 +97,40 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> ensureVaultParams() async {
+    if (salt != null) {
+      return {'salt': salt!, 'verifier': verifier};
+    }
+    final params = await api.fetchVaultParams();
+    salt = params['salt'] as Uint8List;
+    verifier = params['verifier'] as String?;
+
+    if (verifier != null && verifier!.isNotEmpty) {
+      await markVaultSetup();
+    }
+    return {'salt': salt!, 'verifier': verifier};
+  }
+
   Future<bool> needsSetup() async {
-    final v = await _storage.read(key: _vaultSetupKey);
-    return v != '1';
+    final localSetup = await _storage.read(key: _vaultSetupKey);
+    if (localSetup == '1') return false;
+
+    try {
+      final params = await ensureVaultParams();
+      final v = params['verifier'] as String?;
+      if (v != null && v.isNotEmpty) {
+        return false;
+      }
+    } catch (_) {}
+
+    if (user != null) {
+      final captureCount = user!['capture_count'] as int? ?? 0;
+      if (captureCount > 0) {
+        await markVaultSetup();
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> markVaultSetup() async {
@@ -133,9 +165,34 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     error = null;
     notifyListeners();
     try {
-      salt ??= await api.fetchVaultSalt();
-      vaultKey = await VaultCrypto.deriveVaultKey(passcode, salt!);
-      
+      final params = await ensureVaultParams();
+      final s = params['salt'] as Uint8List;
+      final v = params['verifier'] as String?;
+
+      vaultKey = await VaultCrypto.deriveVaultKey(passcode, s);
+
+      if (v != null && v.isNotEmpty) {
+        try {
+          final dec = await VaultCrypto.decryptCapturePayload(vaultKey!, v);
+          if (dec == null || dec['verified'] != true) {
+            throw Exception('Verifier structure mismatch');
+          }
+        } catch (_) {
+          throw Exception('Incorrect vault passcode');
+        }
+      } else {
+        // Legacy vault with no verifier. Silently create and upload one.
+        try {
+          final verifierPayload = {'verified': true};
+          final encryptedVerifier = await VaultCrypto.encryptCapturePayload(vaultKey!, verifierPayload);
+
+          await api.saveVaultVerifier(encryptedVerifier);
+          verifier = encryptedVerifier;
+        } catch (e) {
+          debugPrint('Failed to silently upload legacy verifier: $e');
+        }
+      }
+
       // Save derived key to secure storage for persistent background sessions
       final keyBytes = await vaultKey!.extractBytes();
       await _storage.write(key: 'noteika_temp_vault_key', value: base64Encode(keyBytes));
@@ -151,7 +208,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return true;
     } catch (e) {
-      error = e.toString();
+      error = e.toString().replaceFirst('Exception: ', '');
       vaultKey = null;
       vaultLoading = false;
       notifyListeners();
@@ -170,9 +227,45 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return false;
     }
-    final ok = await unlockVault(passcode);
-    if (ok) await markVaultSetup();
-    return ok;
+
+    vaultLoading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final params = await ensureVaultParams();
+      final s = params['salt'] as Uint8List;
+
+      final derivedKey = await VaultCrypto.deriveVaultKey(passcode, s);
+
+      final verifierPayload = {'verified': true};
+      final encryptedVerifier = await VaultCrypto.encryptCapturePayload(derivedKey, verifierPayload);
+
+      await api.saveVaultVerifier(encryptedVerifier);
+      verifier = encryptedVerifier;
+      vaultKey = derivedKey;
+
+      // Save derived key to secure storage for persistent background sessions
+      final keyBytes = await vaultKey!.extractBytes();
+      await _storage.write(key: 'noteika_temp_vault_key', value: base64Encode(keyBytes));
+
+      // Derive fingerprint matrix in FingerprintService
+      await fingerprintService.deriveAndSetMatrix(vaultKey!);
+
+      // Load or download embedding model asynchronously in background
+      initEmbeddingModel();
+
+      await loadData();
+      await markVaultSetup();
+      vaultLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+      vaultKey = null;
+      vaultLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   void lockVault() {
@@ -513,7 +606,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       if (tempKeyBase64 != null) {
         final keyBytes = base64Decode(tempKeyBase64);
         vaultKey = SecretKey(keyBytes);
-        salt ??= await api.fetchVaultSalt();
+        await ensureVaultParams();
         await fingerprintService.deriveAndSetMatrix(vaultKey!);
         initEmbeddingModel();
         await loadData();

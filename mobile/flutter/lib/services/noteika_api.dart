@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:dio/dio.dart';
@@ -105,10 +103,22 @@ class NoteikaApi {
     return Map<String, dynamic>.from(res.data as Map);
   }
 
-  Future<Uint8List> fetchVaultSalt() async {
+  Future<Map<String, dynamic>> fetchVaultParams() async {
     final res = await _dio.get('/api/vault/salt');
-    final saltB64 = (res.data as Map)['salt'] as String;
-    return VaultCrypto.saltFromBase64(saltB64);
+    final data = Map<String, dynamic>.from(res.data as Map);
+    final saltB64 = data['salt'] as String;
+    final verifierB64 = data['verifier'] as String?;
+    return {
+      'salt': VaultCrypto.saltFromBase64(saltB64),
+      'verifier': verifierB64,
+    };
+  }
+
+  Future<void> saveVaultVerifier(String verifierB64) async {
+    await _dio.post(
+      '/api/vault/verifier',
+      data: {'verifier': verifierB64},
+    );
   }
 
   Future<List<ProjectRef>> listProjects(SecretKey vaultKey) async {

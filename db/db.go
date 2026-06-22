@@ -28,6 +28,7 @@ type User struct {
 	StripeCustomerID    string  `json:"stripe_customer_id,omitempty"`
 	SearchMinSimilarity float32 `json:"search_min_similarity,omitempty"`
 	EncryptionSalt      []byte  `json:"encryption_salt,omitempty"`
+	VaultVerifier       []byte  `json:"vault_verifier,omitempty"`
 	CreatedAt           int64   `json:"created_at"`
 	UpdatedAt      int64  `json:"updated_at"`
 }

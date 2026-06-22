@@ -136,6 +136,7 @@ func (h *AuthHandler) upsertUserFromProfile(userProfile OAuthUserProfile) (strin
 	}
 	user.StripeCustomerID = existingUser.StripeCustomerID
 	user.EncryptionSalt = existingUser.EncryptionSalt
+	user.VaultVerifier = existingUser.VaultVerifier
 
 	if _, err := h.gateway.Send(actor.TypeUpsertUser, actor.UpsertUserPayload{User: user}, 5*time.Second); err != nil {
 		return "", db.User{}, err

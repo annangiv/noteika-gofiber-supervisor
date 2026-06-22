@@ -111,6 +111,7 @@ func (s *Server) Start(port string) error {
 	api.Post("/projects", capturesHandler.CreateProject)
 	api.Get("/tags", capturesHandler.ListTags)
 	api.Get("/vault/salt", vaultHandler.GetSalt)
+	api.Post("/vault/verifier", vaultHandler.SaveVerifier)
 	api.Post("/captures/search", capturesHandler.Search)
 
 	// Account

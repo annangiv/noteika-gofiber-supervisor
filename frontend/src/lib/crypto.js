@@ -13,11 +13,14 @@ export function bytesToB64(bytes) {
   return btoa(bin);
 }
 
-export async function fetchVaultSalt() {
+export async function fetchVaultParams() {
   const res = await fetch('/api/vault/salt');
-  if (!res.ok) throw new Error('Failed to load vault salt');
+  if (!res.ok) throw new Error('Failed to load vault params');
   const data = await res.json();
-  return b64ToBytes(data.salt);
+  return {
+    salt: b64ToBytes(data.salt),
+    verifier: data.verifier ? data.verifier : null,
+  };
 }
 
 /**

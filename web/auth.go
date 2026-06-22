@@ -156,6 +156,7 @@ func (h *AuthHandler) Callback(c *fiber.Ctx) error {
 	}
 	user.StripeCustomerID = existingUser.StripeCustomerID
 	user.EncryptionSalt = existingUser.EncryptionSalt
+	user.VaultVerifier = existingUser.VaultVerifier
 
 	// Upsert User
 	_, err = h.gateway.Send(actor.TypeUpsertUser, actor.UpsertUserPayload{User: user}, 5*time.Second)
