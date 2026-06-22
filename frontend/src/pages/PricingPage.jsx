@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 
 const plans = [
@@ -15,9 +16,7 @@ const plans = [
       'JSON export',
     ],
     cta: 'Get started',
-    href: '/login',
     highlighted: false,
-    disabled: false,
   },
   {
     name: 'Pro',
@@ -32,13 +31,71 @@ const plans = [
       'Cancel anytime',
     ],
     cta: 'Sign in to upgrade',
-    href: '/login',
     highlighted: true,
-    disabled: false,
   },
 ];
 
 export default function PricingPage() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingNotice, setBillingNotice] = useState('');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data);
+        }
+      } catch (err) {
+        console.warn('Failed to check auth status:', err);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+    checkAuth();
+  }, []);
+
+  const handleFreeAction = () => {
+    if (user) {
+      navigate('/notes');
+    } else {
+      navigate('/login');
+    }
+  };
+
+  const handleProAction = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    if (user.pro_access) {
+      navigate('/account');
+      return;
+    }
+
+    if (!user.stripe_enabled) {
+      setBillingNotice('Billing is not configured on this server yet.');
+      return;
+    }
+
+    setBillingLoading(true);
+    setBillingNotice('');
+    try {
+      const res = await fetch('/api/billing/checkout', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'checkout failed');
+      window.location.href = data.url;
+    } catch (err) {
+      setBillingNotice(err.message || 'Could not start checkout.');
+      setBillingLoading(false);
+    }
+  };
+
   return (
     <MarketingLayout>
       <section className="page-hero">
@@ -52,30 +109,73 @@ export default function PricingPage() {
       </section>
 
       <section className="section">
-        <div className="container pricing-grid">
-          {plans.map((plan) => (
-            <article key={plan.name} className={`pricing-card ${plan.highlighted ? 'highlighted' : ''}`}>
-              {plan.highlighted && <span className="pricing-badge">Unlimited saves</span>}
-              <h2>{plan.name}</h2>
-              <div className="pricing-price">
-                <span className="price">{plan.price}</span>
-                <span className="period">{plan.period}</span>
-              </div>
-              <p className="pricing-desc">{plan.description}</p>
-              <ul className="pricing-features">
-                {plan.features.map((f) => (
-                  <li key={f}>✓ {f}</li>
-                ))}
-              </ul>
-              {plan.disabled ? (
-                <button className="btn btn-secondary btn-block" disabled>{plan.cta}</button>
-              ) : (
-                <Link to={plan.href} className={`btn ${plan.highlighted ? 'btn-primary' : 'btn-secondary'} btn-block`}>
-                  {plan.cta}
-                </Link>
-              )}
-            </article>
-          ))}
+        <div className="container pricing-grid" style={{ position: 'relative' }}>
+          {billingNotice && (
+            <p className="settings-saved" style={{
+              position: 'absolute',
+              top: '-48px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '100%',
+              maxWidth: '400px',
+              textAlign: 'center',
+              color: 'var(--danger)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              zIndex: 10
+            }}>
+              {billingNotice}
+            </p>
+          )}
+
+          {plans.map((plan) => {
+            const isFreePlan = plan.name === 'Free';
+            let buttonText = plan.cta;
+            let onClickAction = isFreePlan ? handleFreeAction : handleProAction;
+            let isDisabled = false;
+
+            if (!authLoading && user) {
+              if (isFreePlan) {
+                buttonText = 'Go to notes';
+              } else {
+                if (user.pro_access) {
+                  buttonText = 'Manage plan';
+                } else if (!user.stripe_enabled) {
+                  buttonText = 'Billing not configured';
+                  isDisabled = true;
+                } else {
+                  buttonText = billingLoading ? 'Redirecting…' : 'Upgrade to Pro';
+                }
+              }
+            }
+
+            return (
+              <article key={plan.name} className={`pricing-card ${plan.highlighted ? 'highlighted' : ''}`}>
+                {plan.highlighted && <span className="pricing-badge">Unlimited saves</span>}
+                <h2>{plan.name}</h2>
+                <div className="pricing-price">
+                  <span className="price">{plan.price}</span>
+                  <span className="period">{plan.period}</span>
+                </div>
+                <p className="pricing-desc">{plan.description}</p>
+                <ul className="pricing-features">
+                  {plan.features.map((f) => (
+                    <li key={f}>✓ {f}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className={`btn ${plan.highlighted ? 'btn-primary' : 'btn-secondary'} btn-block`}
+                  onClick={onClickAction}
+                  disabled={isDisabled || (plan.name === 'Pro' && billingLoading)}
+                >
+                  {buttonText}
+                </button>
+              </article>
+            );
+          })}
         </div>
       </section>
 
