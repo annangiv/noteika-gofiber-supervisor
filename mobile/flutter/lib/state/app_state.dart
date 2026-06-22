@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../services/noteika_api.dart';
@@ -11,9 +13,10 @@ import '../services/embedding_service.dart';
 import '../services/iap_service.dart';
 import '../utils/capture_content.dart';
 
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   AppState(this.api) {
     iapService = IapService(this);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   final NoteikaApi api;
@@ -67,6 +70,10 @@ class AppState extends ChangeNotifier {
 
     if (!kIsWeb) {
       iapService.initialize();
+    }
+
+    if (user != null) {
+      await checkAutoUnlock();
     }
 
     authLoading = false;
@@ -129,6 +136,10 @@ class AppState extends ChangeNotifier {
       salt ??= await api.fetchVaultSalt();
       vaultKey = await VaultCrypto.deriveVaultKey(passcode, salt!);
       
+      // Save derived key to secure storage for persistent background sessions
+      final keyBytes = await vaultKey!.extractBytes();
+      await _storage.write(key: 'noteika_temp_vault_key', value: base64Encode(keyBytes));
+
       // Derive fingerprint matrix in FingerprintService
       await fingerprintService.deriveAndSetMatrix(vaultKey!);
 
@@ -171,6 +182,7 @@ class AppState extends ChangeNotifier {
     searchQuery = '';
     isSearching = false;
     fingerprintService.clear();
+    clearTempVaultKey();
     notifyListeners();
   }
 
@@ -481,8 +493,41 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     embeddingService.dispose();
     iapService.dispose();
     super.dispose();
+  }
+
+  @override
+  Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.resumed) {
+      await checkAutoUnlock();
+    }
+  }
+
+  Future<void> checkAutoUnlock() async {
+    try {
+      final tempKeyBase64 = await _storage.read(key: 'noteika_temp_vault_key');
+
+      if (tempKeyBase64 != null) {
+        final keyBytes = base64Decode(tempKeyBase64);
+        vaultKey = SecretKey(keyBytes);
+        salt ??= await api.fetchVaultSalt();
+        await fingerprintService.deriveAndSetMatrix(vaultKey!);
+        initEmbeddingModel();
+        await loadData();
+        notifyListeners();
+      }
+    } catch (_) {
+      await clearTempVaultKey();
+    }
+  }
+
+  Future<void> clearTempVaultKey() async {
+    try {
+      await _storage.delete(key: 'noteika_temp_vault_key');
+      await _storage.delete(key: 'noteika_temp_vault_time');
+    } catch (_) {}
   }
 }

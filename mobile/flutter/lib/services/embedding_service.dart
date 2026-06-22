@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:dart_wordpiece/dart_wordpiece.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -17,10 +17,23 @@ class EmbeddingService {
   bool loaded = false;
 
   Future<bool> checkModelExists() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final modelFile = File('${dir.path}/bge_model/model.onnx');
-    final vocabFile = File('${dir.path}/bge_model/vocab.txt');
-    return await modelFile.exists() && await vocabFile.exists();
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final modelFile = File('${dir.path}/bge_model/model.onnx');
+      final vocabFile = File('${dir.path}/bge_model/vocab.txt');
+      
+      if (!await modelFile.exists() || !await vocabFile.exists()) {
+        return false;
+      }
+      
+      // BGE Small quantized model is ~90MB. Vocab is ~220KB.
+      // Verify file size to catch interrupted/corrupted downloads.
+      final modelSize = await modelFile.length();
+      final vocabSize = await vocabFile.length();
+      return modelSize > 50000000 && vocabSize > 100000;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> downloadAndLoadModel(Function(double) onProgress) async {
@@ -37,11 +50,11 @@ class EmbeddingService {
 
     final dio = Dio();
 
-    if (!await vocabFile.exists()) {
+    if (!await vocabFile.exists() || (await vocabFile.length()) < 100000) {
       await dio.download(_vocabUrl, vocabFile.path);
     }
 
-    if (!await modelFile.exists()) {
+    if (!await modelFile.exists() || (await modelFile.length()) < 50000000) {
       await dio.download(
         _modelUrl,
         modelFile.path,
@@ -59,13 +72,20 @@ class EmbeddingService {
   }
 
   Future<void> loadModel(String modelPath, String vocabPath) async {
-    final vocabContent = await File(vocabPath).readAsString();
-    final vocab = VocabLoader.fromString(vocabContent);
-    _tokenizer = WordPieceTokenizer(vocab: vocab);
+    try {
+      final vocabContent = await File(vocabPath).readAsString();
+      final vocab = VocabLoader.fromString(vocabContent);
+      _tokenizer = WordPieceTokenizer(vocab: vocab);
 
-    final ort = OnnxRuntime();
-    _session = await ort.createSession(modelPath);
-    loaded = true;
+      final ort = OnnxRuntime();
+      _session = await ort.createSession(modelPath);
+      loaded = true;
+    } catch (e) {
+      debugPrint('[Embedding] Error loading model: $e');
+      loaded = false;
+      _session = null;
+      _tokenizer = null;
+    }
   }
 
   Future<List<double>> embedText(String text, {required bool isQuery}) async {
@@ -73,99 +93,110 @@ class EmbeddingService {
       throw StateError('Embedding model is not loaded');
     }
 
-    final prefix = isQuery ? 'query: ' : 'passage: ';
-    final textToEmbed = '$prefix${text.trim().toLowerCase()}';
+    try {
+      final prefix = isQuery ? 'query: ' : 'passage: ';
+      final textToEmbed = '$prefix${text.trim().toLowerCase()}';
 
-    final output = _tokenizer!.encode(textToEmbed);
-    var inputIds = output.inputIds;
-    var attentionMask = output.attentionMask;
+      final output = _tokenizer!.encode(textToEmbed);
+      var inputIds = output.inputIds;
+      var attentionMask = output.attentionMask;
 
-    // Truncate to BGE max sequence length of 512 tokens
-    if (inputIds.length > 512) {
-      inputIds = inputIds.sublist(0, 512);
-      attentionMask = attentionMask.sublist(0, 512);
-    }
+      // Truncate to BGE max sequence length of 512 tokens
+      if (inputIds.length > 512) {
+        inputIds = inputIds.sublist(0, 512);
+        attentionMask = attentionMask.sublist(0, 512);
+      }
 
-    final tokenTypeIds = List<int>.filled(inputIds.length, 0);
+      final tokenTypeIds = List<int>.filled(inputIds.length, 0);
 
-    final inputTensor = await OrtValue.fromList(
-      Int64List.fromList(inputIds),
-      [1, inputIds.length],
-    );
-    final maskTensor = await OrtValue.fromList(
-      Int64List.fromList(attentionMask),
-      [1, attentionMask.length],
-    );
-    
-    // Check if the loaded ONNX model expects token_type_ids
-    final hasTypeIds = _session!.inputNames.contains('token_type_ids');
-    OrtValue? typeTensor;
-    if (hasTypeIds) {
-      typeTensor = await OrtValue.fromList(
-        Int64List.fromList(tokenTypeIds),
-        [1, tokenTypeIds.length],
+      final inputTensor = await OrtValue.fromList(
+        Int64List.fromList(inputIds),
+        [1, inputIds.length],
       );
-    }
-
-    final inputs = {
-      'input_ids': inputTensor,
-      'attention_mask': maskTensor,
-      if (hasTypeIds && typeTensor != null) 'token_type_ids': typeTensor,
-    };
-
-    final outputs = await _session!.run(inputs);
-    final lastHiddenState = outputs['last_hidden_state'] ?? outputs.values.first;
-    final flatData = await lastHiddenState.asFlattenedList();
-
-    // Clean up input tensors immediately
-    inputTensor.dispose();
-    maskTensor.dispose();
-    typeTensor?.dispose();
-
-    // Clean up output tensors
-    for (final v in outputs.values) {
-      v.dispose();
-    }
-
-    // Mean Pooling using attention mask
-    final dim = 384;
-    final seqLen = attentionMask.length;
-    final pooled = List<double>.filled(dim, 0.0);
-    double maskSum = 0.0;
-
-    for (var i = 0; i < seqLen; i++) {
-      final maskVal = attentionMask[i].toDouble();
-      maskSum += maskVal;
-      final offset = i * dim;
-      for (var d = 0; d < dim; d++) {
-        pooled[d] += flatData[offset + d] * maskVal;
+      final maskTensor = await OrtValue.fromList(
+        Int64List.fromList(attentionMask),
+        [1, attentionMask.length],
+      );
+      
+      // Check if the loaded ONNX model expects token_type_ids
+      final hasTypeIds = _session!.inputNames.contains('token_type_ids');
+      OrtValue? typeTensor;
+      if (hasTypeIds) {
+        typeTensor = await OrtValue.fromList(
+          Int64List.fromList(tokenTypeIds),
+          [1, tokenTypeIds.length],
+        );
       }
-    }
 
-    if (maskSum > 0.0) {
-      for (var d = 0; d < dim; d++) {
-        pooled[d] /= maskSum;
+      final inputs = {
+        'input_ids': inputTensor,
+        'attention_mask': maskTensor,
+        if (hasTypeIds && typeTensor != null) 'token_type_ids': typeTensor,
+      };
+
+      final outputs = await _session!.run(inputs);
+      final lastHiddenState = outputs['last_hidden_state'] ?? outputs.values.first;
+      final flatData = await lastHiddenState.asFlattenedList();
+
+      // Clean up input tensors immediately
+      inputTensor.dispose();
+      maskTensor.dispose();
+      typeTensor?.dispose();
+
+      // Clean up output tensors
+      for (final v in outputs.values) {
+        v.dispose();
       }
-    }
 
-    // L2 Normalization
-    double norm = 0.0;
-    for (var d = 0; d < dim; d++) {
-      norm += pooled[d] * pooled[d];
-    }
-    norm = math.sqrt(norm);
+      // Read dimensions dynamically from output tensor shape to prevent out of bounds crashes
+      final shape = lastHiddenState.shape;
+      final seqLen = shape.length >= 3 ? shape[1] : 1;
+      final dim = shape.length >= 3 ? shape[2] : (shape.length >= 2 ? shape[1] : shape[0]);
 
-    if (norm > 0.0) {
-      for (var d = 0; d < dim; d++) {
-        pooled[d] /= norm;
+      // Mean Pooling using attention mask
+      final pooled = List<double>.filled(dim, 0.0);
+      double maskSum = 0.0;
+
+      for (var i = 0; i < seqLen; i++) {
+        // If seqLen is 1 (meaning it's already a pooled sentence embedding), use 1.0 mask weight
+        final maskVal = seqLen > 1 ? attentionMask[i].toDouble() : 1.0;
+        maskSum += maskVal;
+        final offset = i * dim;
+        for (var d = 0; d < dim; d++) {
+          pooled[d] += flatData[offset + d] * maskVal;
+        }
       }
-    }
 
-    return pooled;
+      if (maskSum > 0.0) {
+        for (var d = 0; d < dim; d++) {
+          pooled[d] /= maskSum;
+        }
+      }
+
+      // L2 Normalization
+      double norm = 0.0;
+      for (var d = 0; d < dim; d++) {
+        norm += pooled[d] * pooled[d];
+      }
+      norm = math.sqrt(norm);
+
+      if (norm > 0.0) {
+        for (var d = 0; d < dim; d++) {
+          pooled[d] /= norm;
+        }
+      }
+
+      return pooled;
+    } catch (e) {
+      debugPrint('[Embedding] Error during inference: $e');
+      rethrow;
+    }
   }
 
   Future<void> dispose() async {
-    await _session?.close();
+    try {
+      await _session?.close();
+    } catch (_) {}
     _session = null;
     _tokenizer = null;
     loaded = false;
