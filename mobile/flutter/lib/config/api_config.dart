@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   static const String _rawUrl = String.fromEnvironment(
     'NOTEIKA_API_URL',
-    defaultValue: 'http://localhost:8080',
+    defaultValue: 'https://noteika.com',
   );
 
   static String get baseUrl {
@@ -23,7 +23,7 @@ class ApiConfig {
   /// Override: flutter run --dart-define=GOOGLE_SERVER_CLIENT_ID=your-id-here
   static const String googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
-    defaultValue: '',
+    defaultValue: '545277470147-mpu9i12kdfpmah6hea2qg4gcee5gj32o.apps.googleusercontent.com',
   );
 
   /// Product identifier for Noteika Pro Monthly Subscription on Google Play Console and App Store Connect.
