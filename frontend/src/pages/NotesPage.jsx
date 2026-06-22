@@ -32,6 +32,7 @@ export default function NotesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
 
   // Form states
   const [formBody, setFormBody] = useState('');
@@ -139,6 +140,7 @@ export default function NotesPage() {
       loadCaptures();
       setSearchQuery('');
       setIsSearching(false);
+      setIsSearchLoading(false);
       setSearchResults([]);
     }
   }, [user, selectedProject, vaultKey]);
@@ -185,11 +187,13 @@ export default function NotesPage() {
     const trimmed = query.trim();
     if (!trimmed || !vaultKey) {
       setIsSearching(false);
+      setIsSearchLoading(false);
       setSearchResults([]);
       return;
     }
 
     setIsSearching(true);
+    setIsSearchLoading(true);
 
     try {
       const results = await searchCapturesForUser(vaultKey, trimmed, {
@@ -201,7 +205,7 @@ export default function NotesPage() {
     } catch (err) {
       showToast('Semantic search failed — is the model loaded?', 'error');
     } finally {
-      setIsSearching(false);
+      setIsSearchLoading(false);
     }
   }, [searchMinSimilarity, vaultKey, triggerPrivacyFlow]);
 
@@ -488,7 +492,7 @@ export default function NotesPage() {
         <div className="feed-column">
           {/* SEARCH BAR */}
           <div className="search-container">
-            <i className={isSearching ? 'fa-solid fa-spinner fa-spin search-icon' : 'fa-solid fa-magnifying-glass search-icon'}></i>
+            <i className={isSearchLoading ? 'fa-solid fa-spinner fa-spin search-icon' : 'fa-solid fa-magnifying-glass search-icon'}></i>
             <input
               type="text"
               id="search-input"
@@ -506,6 +510,7 @@ export default function NotesPage() {
                 onClick={() => {
                   setSearchQuery('');
                   setIsSearching(false);
+                  setIsSearchLoading(false);
                   setSearchResults([]);
                 }}
               >
