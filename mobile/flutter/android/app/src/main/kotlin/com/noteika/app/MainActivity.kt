@@ -1,4 +1,4 @@
-package com.example.noteika_mobile
+package com.noteika.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -43,6 +43,13 @@ class NoteikaApi {
 
   Future<Map<String, dynamic>?> currentUser() async {
     try {
+      // Fast path: check if session cookie exists locally to avoid a blocking network call on startup
+      final cookies = await _cookieJar.loadForRequest(Uri.parse(ApiConfig.baseUrl));
+      final hasSession = cookies.any((c) => c.name == ApiConfig.sessionCookieName);
+      if (!hasSession) {
+        return null;
+      }
+
       final res = await _dio.get('/api/auth/me');
       if (res.statusCode == 200) {
         return Map<String, dynamic>.from(res.data as Map);
